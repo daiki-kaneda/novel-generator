@@ -11,6 +11,8 @@ export interface GeneratePlanInput {
 
 export interface GeneratePlanOutput {
   storyId: string;
+  /** Step FunctionsのMapが章生成ループのitemsPathとして使う章index一覧。 */
+  chapterIndexes: number[];
 }
 
 /**
@@ -59,6 +61,9 @@ export class GeneratePlanUseCase {
       plan.chapters.map((outline) => Chapter.fromOutline(outline)),
     );
 
-    return { storyId: input.storyId };
+    return {
+      storyId: input.storyId,
+      chapterIndexes: plan.chapters.map((outline) => outline.index),
+    };
   }
 }
