@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ValidationError } from '../errors/DomainErrors';
 
 /**
  * 物語（ワークフロー実行単位）を一意に識別するID。
@@ -12,7 +13,7 @@ export class StoryId {
 
   static from(value: string): StoryId {
     if (!value || value.trim().length === 0) {
-      throw new Error('StoryId must not be empty');
+      throw new ValidationError('StoryId must not be empty');
     }
     return new StoryId(value);
   }

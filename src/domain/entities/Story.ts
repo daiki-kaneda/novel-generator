@@ -1,5 +1,6 @@
 import { StoryId } from '../value-objects/StoryId';
 import { ApprovalStage } from '../value-objects/ApprovalDecision';
+import { ValidationError } from '../errors/DomainErrors';
 
 export type StoryStatus =
   | 'SUBMITTED'
@@ -40,6 +41,7 @@ export class Story {
   private constructor(private props: StoryMetaProps) {}
 
   static submit(request: StoryRequest): Story {
+    Story.validateRequest(request);
     const now = new Date().toISOString();
     return new Story({
       storyId: StoryId.generate().toString(),
@@ -52,6 +54,23 @@ export class Story {
 
   static restore(props: StoryMetaProps): Story {
     return new Story({ ...props });
+  }
+
+  private static validateRequest(request: StoryRequest): void {
+    const requiredFields: Array<[keyof StoryRequest, string]> = [
+      ['overview', '概要'],
+      ['theme', 'テーマ'],
+      ['characters', '登場人物'],
+      ['userEmail', 'メールアドレス'],
+    ];
+    for (const [field, label] of requiredFields) {
+      if (!request[field] || String(request[field]).trim().length === 0) {
+        throw new ValidationError(`${label}は必須です`);
+      }
+    }
+    if (!request.userEmail.includes('@')) {
+      throw new ValidationError('メールアドレスの形式が正しくありません');
+    }
   }
 
   get storyId(): string {

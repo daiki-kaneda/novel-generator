@@ -1,4 +1,5 @@
 import { ChapterOutline } from './Chapter';
+import { ValidationError } from '../errors/DomainErrors';
 
 export interface PlanProps {
   summary: string;
@@ -17,7 +18,7 @@ export class Plan {
 
   static create(props: Omit<PlanProps, 'revisionHistory'>): Plan {
     if (props.chapters.length === 0) {
-      throw new Error('Plan must contain at least one chapter');
+      throw new ValidationError('Plan must contain at least one chapter');
     }
     return new Plan({ ...props, revisionHistory: [] });
   }

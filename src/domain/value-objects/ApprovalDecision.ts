@@ -1,3 +1,5 @@
+import { ValidationError } from '../errors/DomainErrors';
+
 /**
  * ワークフローが承認待ち（waitForTaskToken）になっている段階。
  */
@@ -18,7 +20,7 @@ export class ApprovalDecision {
 
   static reject(feedback: string): ApprovalDecision {
     if (!feedback || feedback.trim().length === 0) {
-      throw new Error('Rejection requires feedback describing the requested changes');
+      throw new ValidationError('Rejection requires feedback describing the requested changes');
     }
     return new ApprovalDecision(false, feedback);
   }
