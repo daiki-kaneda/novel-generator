@@ -12,4 +12,11 @@ export const appConfig = {
     /** 最終テキストの署名付きURLの有効期限（秒） */
     finalUrlExpirySeconds: 60 * 60 * 24 * 7,
   },
+  notification: {
+    /**
+     * SESの送信元アドレス。SESで検証済みのID（メールアドレス/ドメイン）である必要がある。
+     * `cdk deploy` 時に `-c notificationFromAddress=you@example.com` で上書きすることを想定。
+     */
+    fromAddress: process.env.NOTIFICATION_FROM_ADDRESS ?? 'noreply@example.com',
+  },
 } as const;
