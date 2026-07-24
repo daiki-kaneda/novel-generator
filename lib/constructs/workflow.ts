@@ -12,7 +12,12 @@ import { createHandlerFunction } from './nodeFunction';
 export interface NovelWorkflowProps {
   storyTable: dynamodb.ITable;
   contentBucket: s3.IBucket;
+  /** Bedrock Converse に渡す推論プロファイル / モデル ID */
   bedrockModelId: string;
+  /** IAM で許可する基盤モデル ID（推論プロファイルのルーティング先） */
+  bedrockFoundationModelId: string;
+  /** 基盤モデルを許可するリージョン（JP プロファイルなら東京・大阪） */
+  bedrockFoundationModelRegions: readonly string[];
   notificationFromAddress: string;
   finalUrlExpirySeconds: number;
 }
@@ -31,10 +36,17 @@ export class NovelWorkflow extends Construct {
   constructor(scope: Construct, id: string, props: NovelWorkflowProps) {
     super(scope, id);
 
-    const modelArn = this.foundationModelArn(props.bedrockModelId);
+    const stack = Stack.of(this);
     const bedrockInvokeStatement = new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: [modelArn],
+      // 推論プロファイル ARN + ルーティング先 foundation-model ARN（JP は東京・大阪）
+      resources: [
+        `arn:${stack.partition}:bedrock:${stack.region}:${stack.account}:inference-profile/${props.bedrockModelId}`,
+        ...props.bedrockFoundationModelRegions.map(
+          (r) =>
+            `arn:${stack.partition}:bedrock:${r}::foundation-model/${props.bedrockFoundationModelId}`,
+        ),
+      ],
     });
     const sesSendStatement = new iam.PolicyStatement({
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
@@ -246,10 +258,5 @@ export class NovelWorkflow extends Construct {
       },
       tracingEnabled: true,
     });
-  }
-
-  private foundationModelArn(modelId: string): string {
-    const stack = Stack.of(this);
-    return `arn:${stack.partition}:bedrock:${stack.region}::foundation-model/${modelId}`;
   }
 }

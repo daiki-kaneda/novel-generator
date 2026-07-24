@@ -4,8 +4,18 @@
  */
 export const appConfig = {
   bedrock: {
-    /** プラン生成・章生成・要約生成・改訂プラン生成すべてで使用するモデル */
-    modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+    /**
+     * Converse API に渡す推論プロファイル ID（デフォルトは日本クロスリージョン）。
+     * `BEDROCK_MODEL_ID` で上書き可能（再デプロイが必要）。
+     */
+    modelId: process.env.BEDROCK_MODEL_ID ?? 'jp.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    /**
+     * IAM で許可する基盤モデル ID。
+     * JP 推論プロファイルがルーティングする実体（東京・大阪）。
+     */
+    foundationModelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+    /** JP プロファイルのルーティング先リージョン */
+    foundationModelRegions: ['ap-northeast-1', 'ap-northeast-3'] as const,
     region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
   },
   novel: {

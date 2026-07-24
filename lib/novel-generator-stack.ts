@@ -22,6 +22,8 @@ export class NovelGeneratorStack extends cdk.Stack {
       storyTable: storage.storyTable,
       contentBucket: storage.contentBucket,
       bedrockModelId: appConfig.bedrock.modelId,
+      bedrockFoundationModelId: appConfig.bedrock.foundationModelId,
+      bedrockFoundationModelRegions: appConfig.bedrock.foundationModelRegions,
       notificationFromAddress: appConfig.notification.fromAddress,
       finalUrlExpirySeconds: appConfig.novel.finalUrlExpirySeconds,
     });
