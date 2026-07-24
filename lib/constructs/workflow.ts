@@ -222,7 +222,16 @@ export class NovelWorkflow extends Construct {
     mergePlanFeedback.next(generatePlan);
     generateChaptersMap.next(requestFinalApproval);
 
-    const definition = generatePlan.next(requestPlanApproval).next(planApprovedChoice);
+    // EventBridge Pipes(SQS)は batchSize=1 でも変換結果を配列で渡すため、先頭要素を取り出す
+    const unwrapPipeBatch = new sfn.Pass(this, 'UnwrapPipeBatch', {
+      comment: 'Pipeからの [{ storyId }] を { storyId } に展開する',
+      inputPath: '$[0]',
+    });
+
+    const definition = unwrapPipeBatch
+      .next(generatePlan)
+      .next(requestPlanApproval)
+      .next(planApprovedChoice);
     requestFinalApproval.next(finalApprovedChoice);
 
     return new sfn.StateMachine(this, 'StateMachine', {
