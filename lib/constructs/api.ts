@@ -1,4 +1,5 @@
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -7,13 +8,15 @@ import { createHandlerFunction } from './nodeFunction';
 
 export interface NovelApiProps {
   storyTable: dynamodb.ITable;
+  contentBucket: s3.IBucket;
   storyRequestQueueUrl: string;
   storyRequestQueueArn: string;
+  finalUrlExpirySeconds: number;
 }
 
 /**
- * ユーザー操作（物語の送信、状態確認、プラン/最終原稿の承認・拒否）を受け付ける
- * HTTP API Gatewayと、それぞれに対応するLambda関数を定義する。
+ * ユーザー操作（物語の送信、状態確認、プラン/章/最終原稿の承認・拒否、章本文取得）を
+ * 受け付ける HTTP API Gatewayと、それぞれに対応するLambda関数を定義する。
  */
 export class NovelApi extends Construct {
   readonly httpApi: HttpApi;
@@ -53,6 +56,18 @@ export class NovelApi extends Construct {
     });
     props.storyTable.grantReadData(getStoryStatusFn);
 
+    const getChapterContentFn = createHandlerFunction(this, 'GetChapterContentFunction', {
+      entry: 'getChapterContent.ts',
+      description: 'GET /stories/{storyId}/chapters/{chapterIndex}/content: 章本文URLを取得する',
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+        CONTENT_BUCKET_NAME: props.contentBucket.bucketName,
+        FINAL_URL_EXPIRY_SECONDS: String(props.finalUrlExpirySeconds),
+      },
+    });
+    props.storyTable.grantReadData(getChapterContentFn);
+    props.contentBucket.grantRead(getChapterContentFn);
+
     const planDecisionFn = createHandlerFunction(this, 'PlanDecisionFunction', {
       entry: 'planDecision.ts',
       description: 'POST /stories/{storyId}/plan/decision: プランの承認/拒否',
@@ -62,6 +77,16 @@ export class NovelApi extends Construct {
     });
     props.storyTable.grantReadWriteData(planDecisionFn);
     planDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
+
+    const chapterDecisionFn = createHandlerFunction(this, 'ChapterDecisionFunction', {
+      entry: 'chapterDecision.ts',
+      description: 'POST /stories/{storyId}/chapters/{chapterIndex}/decision: 章の承認/拒否',
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+      },
+    });
+    props.storyTable.grantReadWriteData(chapterDecisionFn);
+    chapterDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const finalDecisionFn = createHandlerFunction(this, 'FinalDecisionFunction', {
       entry: 'finalDecision.ts',
@@ -74,7 +99,7 @@ export class NovelApi extends Construct {
     finalDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     this.httpApi = new HttpApi(this, 'HttpApi', {
-      description: '短編小説生成ワークフロー API',
+      description: '小説生成ワークフロー API',
       corsPreflight: {
         allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST],
         allowOrigins: ['*'],
@@ -93,9 +118,19 @@ export class NovelApi extends Construct {
       integration: new HttpLambdaIntegration('GetStoryStatusIntegration', getStoryStatusFn),
     });
     this.httpApi.addRoutes({
+      path: '/stories/{storyId}/chapters/{chapterIndex}/content',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('GetChapterContentIntegration', getChapterContentFn),
+    });
+    this.httpApi.addRoutes({
       path: '/stories/{storyId}/plan/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('PlanDecisionIntegration', planDecisionFn),
+    });
+    this.httpApi.addRoutes({
+      path: '/stories/{storyId}/chapters/{chapterIndex}/decision',
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration('ChapterDecisionIntegration', chapterDecisionFn),
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/final/decision',

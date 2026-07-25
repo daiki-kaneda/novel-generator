@@ -5,7 +5,6 @@ import {
   GeneratePlanInput,
   GeneratedPlan,
   GenerateChapterTextInput,
-  ProposeRevisionPlanInput,
 } from '../../../src/application/ports/NovelTextGenerator';
 import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway';
 import { NotificationSender } from '../../../src/application/ports/NotificationSender';
@@ -15,7 +14,7 @@ import { Plan } from '../../../src/domain/entities/Plan';
 import { Chapter } from '../../../src/domain/entities/Chapter';
 import { NotFoundError } from '../../../src/domain/errors/DomainErrors';
 import { ApprovalDecision } from '../../../src/domain/value-objects/ApprovalDecision';
-import { ChapterRevisionInstruction } from '../../../src/domain/services/RevisionScopePolicy';
+import { StoryLength } from '../../../src/domain/value-objects/StoryLength';
 
 /**
  * ユースケースをAWSに依存せずテストするためのインメモリなFake実装群。
@@ -131,7 +130,6 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
   };
   generateChapterTextResult = 'fake chapter text';
   summarizeChapterResult = 'fake chapter summary';
-  proposeRevisionPlanResult: ChapterRevisionInstruction[] = [];
 
   async generatePlan(_input: GeneratePlanInput): Promise<GeneratedPlan> {
     return this.generatePlanResult;
@@ -141,14 +139,8 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
     return this.generateChapterTextResult;
   }
 
-  async summarizeChapter(_chapterText: string): Promise<string> {
+  async summarizeChapter(_chapterText: string, _length: StoryLength): Promise<string> {
     return this.summarizeChapterResult;
-  }
-
-  async proposeRevisionPlan(
-    _input: ProposeRevisionPlanInput,
-  ): Promise<ChapterRevisionInstruction[]> {
-    return this.proposeRevisionPlanResult;
   }
 }
 

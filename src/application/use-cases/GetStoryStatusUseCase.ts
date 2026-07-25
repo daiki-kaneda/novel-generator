@@ -1,10 +1,17 @@
 import { StoryStatus } from '../../domain/entities/Story';
 import { ChapterOutline, ChapterStatus } from '../../domain/entities/Chapter';
+import { ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
+import { StoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
 
 export interface StoryStatusOutput {
   storyId: string;
   status: StoryStatus;
+  requirePlanApproval: boolean;
+  requireChapterApproval: boolean;
+  length: StoryLength;
+  taskStage?: ApprovalStage;
+  currentChapterIndex?: number;
   plan?: {
     summary: string;
     theme: string;
@@ -32,6 +39,11 @@ export class GetStoryStatusUseCase {
     return {
       storyId: story.storyId,
       status: story.status,
+      requirePlanApproval: story.request.requirePlanApproval,
+      requireChapterApproval: story.request.requireChapterApproval,
+      length: story.request.length,
+      taskStage: story.taskStage,
+      currentChapterIndex: story.currentChapterIndex,
       plan: plan
         ? {
             summary: plan.summary,

@@ -34,8 +34,10 @@ export class NovelGeneratorStack extends cdk.Stack {
 
     const api = new NovelApi(this, 'Api', {
       storyTable: storage.storyTable,
+      contentBucket: storage.contentBucket,
       storyRequestQueueUrl: ingestion.requestQueue.queueUrl,
       storyRequestQueueArn: ingestion.requestQueue.queueArn,
+      finalUrlExpirySeconds: appConfig.novel.finalUrlExpirySeconds,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {

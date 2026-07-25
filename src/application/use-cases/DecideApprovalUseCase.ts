@@ -10,11 +10,12 @@ export interface DecideApprovalInput {
   approved: boolean;
   /** 拒否時は必須。修正してほしい点を記述する。 */
   feedback?: string;
+  /** expectedStageが`chapter`のとき、対象章のindex。 */
+  chapterIndex?: number;
 }
 
 /**
- * ユーザーによるプラン承認/拒否・最終承認/拒否の両方に対応するユースケース。
- * プラン用・最終用で処理内容は同一（対象のtaskTokenへ決定を送るだけ）なため、
+ * ユーザーによるプラン承認/拒否・章承認/拒否・最終承認/拒否に対応するユースケース。
  * `expectedStage`で対象段階を検証しつつ1つのユースケースに統一している。
  */
 export class DecideApprovalUseCase {
@@ -30,6 +31,17 @@ export class DecideApprovalUseCase {
       throw new ValidationError(
         `Story ${input.storyId} is not currently awaiting a "${input.expectedStage}" approval decision`,
       );
+    }
+
+    if (input.expectedStage === 'chapter') {
+      if (input.chapterIndex === undefined) {
+        throw new ValidationError('chapterIndex is required for chapter approval decisions');
+      }
+      if (story.currentChapterIndex !== input.chapterIndex) {
+        throw new ValidationError(
+          `Story ${input.storyId} is awaiting approval for chapter ${story.currentChapterIndex}, not ${input.chapterIndex}`,
+        );
+      }
     }
 
     const decision = input.approved

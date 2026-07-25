@@ -19,6 +19,9 @@ describe('FinalizeNovelUseCase', () => {
       theme: 'theme',
       characters: 'characters',
       userEmail: 'user@example.com',
+      requirePlanApproval: true,
+      requireChapterApproval: false,
+      length: 'short',
     });
     await repo.createStory(story);
     await repo.savePlan(
@@ -69,6 +72,9 @@ describe('FinalizeNovelUseCase', () => {
       theme: 'theme',
       characters: 'characters',
       userEmail: 'user@example.com',
+      requirePlanApproval: true,
+      requireChapterApproval: false,
+      length: 'short',
     });
     await repo.createStory(story);
     await repo.savePlan(

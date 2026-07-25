@@ -6,6 +6,8 @@ export interface RequestApprovalInput {
   stage: ApprovalStage;
   /** Step Functionsの`waitForTaskToken`タスクから渡されるトークン。 */
   taskToken: string;
+  /** stageが`chapter`のとき必須。 */
+  chapterIndex?: number;
 }
 
 /**
@@ -19,7 +21,7 @@ export class RequestApprovalUseCase {
 
   async execute(input: RequestApprovalInput): Promise<void> {
     const story = await this.storyRepository.getStory(input.storyId);
-    story.awaitApproval(input.stage, input.taskToken);
+    story.awaitApproval(input.stage, input.taskToken, input.chapterIndex);
     await this.storyRepository.saveStory(story);
   }
 }

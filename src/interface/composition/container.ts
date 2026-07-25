@@ -15,11 +15,11 @@ import { SqsRequestQueue } from '../../infrastructure/sqs/SqsRequestQueue';
 
 import { SubmitStoryUseCase } from '../../application/use-cases/SubmitStoryUseCase';
 import { GetStoryStatusUseCase } from '../../application/use-cases/GetStoryStatusUseCase';
+import { GetChapterContentUseCase } from '../../application/use-cases/GetChapterContentUseCase';
 import { GeneratePlanUseCase } from '../../application/use-cases/GeneratePlanUseCase';
 import { RequestApprovalUseCase } from '../../application/use-cases/RequestApprovalUseCase';
 import { DecideApprovalUseCase } from '../../application/use-cases/DecideApprovalUseCase';
 import { GenerateChapterUseCase } from '../../application/use-cases/GenerateChapterUseCase';
-import { CreateRevisionPlanUseCase } from '../../application/use-cases/CreateRevisionPlanUseCase';
 import { FinalizeNovelUseCase } from '../../application/use-cases/FinalizeNovelUseCase';
 
 function requiredEnv(name: string): string {
@@ -82,6 +82,14 @@ const finalUrlExpirySeconds = lazy(() =>
 export const container = {
   submitStoryUseCase: lazy(() => new SubmitStoryUseCase(storyRepository(), requestQueue())),
   getStoryStatusUseCase: lazy(() => new GetStoryStatusUseCase(storyRepository())),
+  getChapterContentUseCase: lazy(
+    () =>
+      new GetChapterContentUseCase(
+        storyRepository(),
+        chapterContentStorage(),
+        finalUrlExpirySeconds(),
+      ),
+  ),
   generatePlanUseCase: lazy(
     () => new GeneratePlanUseCase(storyRepository(), novelTextGenerator()),
   ),
@@ -96,9 +104,6 @@ export const container = {
         chapterContentStorage(),
         novelTextGenerator(),
       ),
-  ),
-  createRevisionPlanUseCase: lazy(
-    () => new CreateRevisionPlanUseCase(storyRepository(), novelTextGenerator()),
   ),
   finalizeNovelUseCase: lazy(
     () =>

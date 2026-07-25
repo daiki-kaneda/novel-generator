@@ -1,4 +1,5 @@
 import { Story } from '../../domain/entities/Story';
+import { StoryLength, resolveStoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
 import { RequestQueue } from '../ports/RequestQueue';
 
@@ -8,6 +9,12 @@ export interface SubmitStoryInput {
   characters: string;
   tone?: string;
   userEmail: string;
+  /** 省略時は true。 */
+  requirePlanApproval?: boolean;
+  /** 省略時は false。 */
+  requireChapterApproval?: boolean;
+  /** 省略時は short。 */
+  length?: StoryLength;
 }
 
 export interface SubmitStoryOutput {
@@ -28,6 +35,9 @@ export class SubmitStoryUseCase {
       characters: input.characters,
       tone: input.tone,
       userEmail: input.userEmail,
+      requirePlanApproval: input.requirePlanApproval ?? true,
+      requireChapterApproval: input.requireChapterApproval ?? false,
+      length: resolveStoryLength(input.length),
     });
 
     await this.storyRepository.createStory(story);

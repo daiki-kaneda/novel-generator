@@ -4,14 +4,21 @@ import { Story } from '../../src/domain/entities/Story';
 import { ApprovalStage } from '../../src/domain/value-objects/ApprovalDecision';
 import { FakeStoryRepository, FakeApprovalGateway } from './support/fakes';
 
-async function buildAwaitingStory(repo: FakeStoryRepository, stage: ApprovalStage): Promise<Story> {
+async function buildAwaitingStory(
+  repo: FakeStoryRepository,
+  stage: ApprovalStage,
+  chapterIndex?: number,
+): Promise<Story> {
   const story = Story.submit({
     overview: 'overview',
     theme: 'theme',
     characters: 'characters',
     userEmail: 'user@example.com',
+    requirePlanApproval: true,
+    requireChapterApproval: false,
+    length: 'short',
   });
-  story.awaitApproval(stage, 'task-token');
+  story.awaitApproval(stage, 'task-token', chapterIndex);
   await repo.createStory(story);
   return story;
 }
@@ -59,6 +66,42 @@ describe('DecideApprovalUseCase', () => {
 
     await expect(
       useCase.execute({ storyId: story.storyId, expectedStage: 'final', approved: true }),
+    ).rejects.toThrow(ValidationError);
+
+    expect(gateway.sentDecisions).toHaveLength(0);
+  });
+
+  it('accepts a chapter approval decision for the awaited chapter index', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'chapter', 2);
+    const useCase = new DecideApprovalUseCase(repo, gateway);
+
+    await useCase.execute({
+      storyId: story.storyId,
+      expectedStage: 'chapter',
+      approved: true,
+      chapterIndex: 2,
+    });
+
+    expect(gateway.sentDecisions).toHaveLength(1);
+    const updated = await repo.getStory(story.storyId);
+    expect(updated.currentChapterIndex).toBeUndefined();
+  });
+
+  it('rejects a chapter decision when the chapter index does not match', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'chapter', 2);
+    const useCase = new DecideApprovalUseCase(repo, gateway);
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        expectedStage: 'chapter',
+        approved: true,
+        chapterIndex: 3,
+      }),
     ).rejects.toThrow(ValidationError);
 
     expect(gateway.sentDecisions).toHaveLength(0);

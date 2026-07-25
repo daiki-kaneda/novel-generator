@@ -13,6 +13,9 @@ export interface GeneratePlanOutput {
   storyId: string;
   /** Step FunctionsのMapが章生成ループのitemsPathとして使う章index一覧。 */
   chapterIndexes: number[];
+  /** Step FunctionsのChoiceがDB再読込なしで判定するためのフラグ。 */
+  requirePlanApproval: boolean;
+  requireChapterApproval: boolean;
 }
 
 /**
@@ -37,6 +40,7 @@ export class GeneratePlanUseCase {
       theme: story.request.theme,
       characters: story.request.characters,
       tone: story.request.tone,
+      length: story.request.length,
       previousPlan: previousPlan?.toProps(),
       feedback: input.feedback,
     });
@@ -64,6 +68,8 @@ export class GeneratePlanUseCase {
     return {
       storyId: input.storyId,
       chapterIndexes: plan.chapters.map((outline) => outline.index),
+      requirePlanApproval: story.request.requirePlanApproval,
+      requireChapterApproval: story.request.requireChapterApproval,
     };
   }
 }
