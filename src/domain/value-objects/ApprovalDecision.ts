@@ -3,7 +3,7 @@ import { ValidationError } from '../errors/DomainErrors';
 /**
  * ワークフローが承認待ち（waitForTaskToken）になっている段階。
  */
-export type ApprovalStage = 'plan' | 'final';
+export type ApprovalStage = 'plan' | 'chapter' | 'final';
 
 /**
  * ユーザーによる承認/拒否の決定。拒否時は修正点のフィードバックを必須とする。

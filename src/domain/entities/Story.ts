@@ -1,5 +1,6 @@
 import { StoryId } from '../value-objects/StoryId';
 import { ApprovalStage } from '../value-objects/ApprovalDecision';
+import { StoryLength, resolveStoryLength } from '../value-objects/StoryLength';
 import { ValidationError } from '../errors/DomainErrors';
 
 export type StoryStatus =
@@ -7,6 +8,7 @@ export type StoryStatus =
   | 'PLAN_GENERATING'
   | 'AWAITING_PLAN_APPROVAL'
   | 'CHAPTERS_GENERATING'
+  | 'AWAITING_CHAPTER_APPROVAL'
   | 'AWAITING_FINAL_APPROVAL'
   | 'REVISING'
   | 'COMPLETED';
@@ -18,6 +20,12 @@ export interface StoryRequest {
   characters: string;
   tone?: string;
   userEmail: string;
+  /** プラン承認を求めるか。デフォルト true。 */
+  requirePlanApproval: boolean;
+  /** 各章の承認を求めるか。デフォルト false。 */
+  requireChapterApproval: boolean;
+  /** 短編 / 中編。デフォルト short。 */
+  length: StoryLength;
 }
 
 export interface StoryMetaProps {
@@ -26,6 +34,8 @@ export interface StoryMetaProps {
   request: StoryRequest;
   currentTaskToken?: string;
   taskStage?: ApprovalStage;
+  /** 章承認待ちのとき、対象章のindex。 */
+  currentChapterIndex?: number;
   executionArn?: string;
   finalUrl?: string;
   createdAt: string;
@@ -46,14 +56,28 @@ export class Story {
     return new Story({
       storyId: StoryId.generate().toString(),
       status: 'SUBMITTED',
-      request,
+      request: {
+        ...request,
+        requirePlanApproval: request.requirePlanApproval ?? true,
+        requireChapterApproval: request.requireChapterApproval ?? false,
+        length: resolveStoryLength(request.length),
+      },
       createdAt: now,
       updatedAt: now,
     });
   }
 
   static restore(props: StoryMetaProps): Story {
-    return new Story({ ...props });
+    const request = props.request ?? ({} as StoryRequest);
+    return new Story({
+      ...props,
+      request: {
+        ...request,
+        requirePlanApproval: request.requirePlanApproval ?? true,
+        requireChapterApproval: request.requireChapterApproval ?? false,
+        length: resolveStoryLength(request.length),
+      },
+    });
   }
 
   private static validateRequest(request: StoryRequest): void {
@@ -93,6 +117,10 @@ export class Story {
     return this.props.taskStage;
   }
 
+  get currentChapterIndex(): number | undefined {
+    return this.props.currentChapterIndex;
+  }
+
   get executionArn(): string | undefined {
     return this.props.executionArn;
   }
@@ -112,10 +140,19 @@ export class Story {
   }
 
   /** waitForTaskTokenで承認待ちに入ったことを記録する。 */
-  awaitApproval(stage: ApprovalStage, taskToken: string): void {
+  awaitApproval(stage: ApprovalStage, taskToken: string, chapterIndex?: number): void {
     this.props.taskStage = stage;
     this.props.currentTaskToken = taskToken;
-    this.props.status = stage === 'plan' ? 'AWAITING_PLAN_APPROVAL' : 'AWAITING_FINAL_APPROVAL';
+    if (stage === 'chapter') {
+      if (chapterIndex === undefined) {
+        throw new ValidationError('Chapter approval requires a chapterIndex');
+      }
+      this.props.currentChapterIndex = chapterIndex;
+      this.props.status = 'AWAITING_CHAPTER_APPROVAL';
+    } else {
+      this.props.currentChapterIndex = undefined;
+      this.props.status = stage === 'plan' ? 'AWAITING_PLAN_APPROVAL' : 'AWAITING_FINAL_APPROVAL';
+    }
     this.touch();
   }
 
@@ -123,6 +160,7 @@ export class Story {
   clearApproval(): void {
     this.props.currentTaskToken = undefined;
     this.props.taskStage = undefined;
+    this.props.currentChapterIndex = undefined;
     this.touch();
   }
 
