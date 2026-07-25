@@ -4,16 +4,14 @@ import {
   GeneratePlanInput,
   GeneratedPlan,
   GenerateChapterTextInput,
-  ProposeRevisionPlanInput,
 } from '../../application/ports/NovelTextGenerator';
-import { ChapterRevisionInstruction } from '../../domain/services/RevisionScopePolicy';
+import { STORY_LENGTH_PRESETS, StoryLength } from '../../domain/value-objects/StoryLength';
 
 const DEFAULT_MAX_TOKENS = 4096;
-const CHAPTER_MAX_TOKENS = 8192;
 
 /**
  * Bedrock (Claude Sonnet) を使ったテキスト生成アダプタ。
- * プラン生成・章生成・要約生成・改訂プラン提案のすべてで、Bedrockの
+ * プラン生成・章生成・要約生成のすべてで、Bedrockの
  * Converse APIを共通のクライアントで呼び出す。
  */
 export class BedrockNovelTextGenerator implements NovelTextGenerator {
@@ -23,18 +21,21 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
   ) {}
 
   async generatePlan(input: GeneratePlanInput): Promise<GeneratedPlan> {
+    const preset = STORY_LENGTH_PRESETS[input.length];
     const systemPrompt = [
-      'あなたは短編小説の編集者兼プロットライターです。',
-      '与えられた概要・テーマ・登場人物・文調から、短編小説の生成プランを作成してください。',
+      'あなたは短編・中編小説の編集者兼プロットライターです。',
+      '与えられた概要・テーマ・登場人物・文調から、小説の生成プランを作成してください。',
       '出力は必ず次のJSON形式のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
       '{"summary": string, "theme": string, "characters": string, "chapters": [{"index": number, "title": string, "outline": string}]}',
-      '章は3〜8章程度を目安に、物語として一貫した構成にしてください。indexは1から始まる連番にしてください。',
+      `章は${preset.chapterCountHint}を目安に、物語として一貫した構成にしてください。indexは1から始まる連番にしてください。`,
+      `各章の本文はおよそ${preset.targetCharsPerChapter}を想定して、章立ての粒度を決めてください。`,
     ].join('\n');
 
     const sections = [
       `概要: ${input.overview}`,
       `テーマ: ${input.theme}`,
       `登場人物: ${input.characters}`,
+      `長さプリセット: ${input.length}`,
     ];
     if (input.tone) {
       sections.push(`文調: ${input.tone}`);
@@ -59,9 +60,11 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
   }
 
   async generateChapterText(input: GenerateChapterTextInput): Promise<string> {
+    const preset = STORY_LENGTH_PRESETS[input.length];
     const systemPrompt = [
-      'あなたは短編小説家です。指定された章の本文のみを日本語で執筆してください。',
+      'あなたは小説家です。指定された章の本文のみを日本語で執筆してください。',
       '本文以外の説明・見出し・メタ情報は出力しないでください。',
+      `この章の本文はおよそ${preset.targetCharsPerChapter}を目安に書いてください。`,
     ].join('\n');
 
     const sections = [
@@ -78,37 +81,36 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       sections.push(`改訂指示（この内容を必ず反映して書き直してください）: ${input.revisionInstruction}`);
     }
 
-    return await this.converse(systemPrompt, sections.join('\n\n'), CHAPTER_MAX_TOKENS);
+    return await this.converse(systemPrompt, sections.join('\n\n'), preset.chapterMaxTokens);
   }
 
-  async summarizeChapter(chapterText: string): Promise<string> {
+  async summarizeChapter(chapterText: string, length: StoryLength): Promise<string> {
+    const preset = STORY_LENGTH_PRESETS[length];
     const systemPrompt = [
-      '次の章本文から、次の章を書く上で必要な重要ポイント（登場人物の状態変化、伏線、時間・場所など）を',
-      '簡潔な日本語の文章で要約してください。本文そのものを繰り返さないでください。',
+      '次の章本文から、次の章を書く上で必要な重要ポイントを抽出してください。',
+      '出力は必ず次のJSON形式のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
+      '{"characterStates": string, "unresolvedForeshadowing": string, "timeAndPlace": string, "keyEvents": string}',
+      '各項目は簡潔な日本語で書いてください。本文そのものを繰り返さないでください。',
     ].join('\n');
 
-    return await this.converse(systemPrompt, chapterText, DEFAULT_MAX_TOKENS);
-  }
-
-  async proposeRevisionPlan(
-    input: ProposeRevisionPlanInput,
-  ): Promise<ChapterRevisionInstruction[]> {
-    const systemPrompt = [
-      'あなたは小説編集者です。ユーザーからの最終原稿への修正フィードバックを読み、',
-      'どの章（indexで指定）をどのように改訂すべきかを提案してください。',
-      '出力は必ず次のJSON形式の配列のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
-      '[{"chapterIndex": number, "instruction": string}]',
-      'フィードバックと関係のない章は含めないでください。',
-    ].join('\n');
-
-    const userContent = [
-      `フィードバック: ${input.feedback}`,
-      '--- 章一覧 ---',
-      JSON.stringify(input.chapters),
-    ].join('\n\n');
-
-    const responseText = await this.converse(systemPrompt, userContent, DEFAULT_MAX_TOKENS);
-    return this.parseJson<ChapterRevisionInstruction[]>(responseText);
+    const responseText = await this.converse(systemPrompt, chapterText, preset.summaryMaxTokens);
+    // 次章プロンプトへ渡しやすいよう、構造化結果を読みやすい文章に整形する。
+    try {
+      const parsed = this.parseJson<{
+        characterStates?: string;
+        unresolvedForeshadowing?: string;
+        timeAndPlace?: string;
+        keyEvents?: string;
+      }>(responseText);
+      return [
+        `登場人物の状態: ${parsed.characterStates ?? ''}`,
+        `未解決の伏線: ${parsed.unresolvedForeshadowing ?? ''}`,
+        `時間・場所: ${parsed.timeAndPlace ?? ''}`,
+        `重要イベント: ${parsed.keyEvents ?? ''}`,
+      ].join('\n');
+    } catch {
+      return responseText;
+    }
   }
 
   private async converse(
