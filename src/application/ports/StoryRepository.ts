@@ -1,9 +1,10 @@
 import { Story } from '../../domain/entities/Story';
+import { StoryMetadata } from '../../domain/entities/StoryMetadata';
 import { Plan } from '../../domain/entities/Plan';
 import { Chapter } from '../../domain/entities/Chapter';
 
 /**
- * Story/Plan/Chapterの永続化を抽象化するポート。
+ * Story/Metadata/Plan/Chapterの永続化を抽象化するポート。
  * DynamoDB単一テーブルのアクセスパターンなど、具体的な実装の詳細はこのインターフェースの
  * 背後（infrastructure層）に隠蔽する。
  */
@@ -11,6 +12,10 @@ export interface StoryRepository {
   createStory(story: Story): Promise<void>;
   getStory(storyId: string): Promise<Story>;
   saveStory(story: Story): Promise<void>;
+
+  saveMetadata(storyId: string, metadata: StoryMetadata): Promise<void>;
+  getMetadata(storyId: string): Promise<StoryMetadata>;
+  findMetadata(storyId: string): Promise<StoryMetadata | null>;
 
   savePlan(storyId: string, plan: Plan): Promise<void>;
   getPlan(storyId: string): Promise<Plan>;

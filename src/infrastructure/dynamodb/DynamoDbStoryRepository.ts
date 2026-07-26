@@ -6,12 +6,14 @@ import {
   BatchWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Story, StoryMetaProps } from '../../domain/entities/Story';
+import { StoryMetadata, StoryMetadataProps } from '../../domain/entities/StoryMetadata';
 import { Plan, PlanProps } from '../../domain/entities/Plan';
 import { Chapter, ChapterProps } from '../../domain/entities/Chapter';
 import { NotFoundError } from '../../domain/errors/DomainErrors';
 import { StoryRepository } from '../../application/ports/StoryRepository';
 
 const META_RECORD_TYPE = 'META';
+const METADATA_RECORD_TYPE = 'METADATA';
 const PLAN_RECORD_TYPE = 'PLAN';
 const CHAPTER_RECORD_PREFIX = 'CHAPTER#';
 const BATCH_WRITE_CHUNK_SIZE = 25;
@@ -56,6 +58,37 @@ export class DynamoDbStoryRepository implements StoryRepository {
         Item: this.toMetaItem(story.toProps()),
       }),
     );
+  }
+
+  async saveMetadata(storyId: string, metadata: StoryMetadata): Promise<void> {
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: { storyId, recordType: METADATA_RECORD_TYPE, ...metadata.toProps() },
+      }),
+    );
+  }
+
+  async getMetadata(storyId: string): Promise<StoryMetadata> {
+    const metadata = await this.findMetadata(storyId);
+    if (!metadata) {
+      throw new NotFoundError(`Metadata for story ${storyId} not found`);
+    }
+    return metadata;
+  }
+
+  async findMetadata(storyId: string): Promise<StoryMetadata | null> {
+    const result = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { storyId, recordType: METADATA_RECORD_TYPE },
+      }),
+    );
+    if (!result.Item) {
+      return null;
+    }
+    const { storyId: _storyId, recordType: _recordType, ...metadataProps } = result.Item;
+    return StoryMetadata.restore(metadataProps as StoryMetadataProps);
   }
 
   async savePlan(storyId: string, plan: Plan): Promise<void> {

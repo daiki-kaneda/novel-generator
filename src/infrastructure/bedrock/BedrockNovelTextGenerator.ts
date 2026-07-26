@@ -1,6 +1,8 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import {
   NovelTextGenerator,
+  GenerateMetadataInput,
+  GeneratedMetadata,
   GeneratePlanInput,
   GeneratedPlan,
   GenerateChapterTextInput,
@@ -11,7 +13,7 @@ const DEFAULT_MAX_TOKENS = 4096;
 
 /**
  * Bedrock (Claude Sonnet) を使ったテキスト生成アダプタ。
- * プラン生成・章生成・要約生成のすべてで、Bedrockの
+ * メタデータ生成・プラン生成・章生成・要約生成のすべてで、Bedrockの
  * Converse APIを共通のクライアントで呼び出す。
  */
 export class BedrockNovelTextGenerator implements NovelTextGenerator {
@@ -20,26 +22,90 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
     private readonly modelId: string,
   ) {}
 
+  async generateMetadata(input: GenerateMetadataInput): Promise<GeneratedMetadata> {
+    const systemPrompt = [
+      'あなたは短編・中編小説の編集者兼設定担当です。',
+      'ユーザーが与えた概要・テーマ・登場人物などのシード情報を元に、執筆の正本となる物語設定書を作成してください。',
+      '登場人物は性格・背景・目的・関係性まで具体化し、地理・時代・時間経過ルール・一貫性制約を明確にしてください。',
+      '出力は必ず次のJSON形式のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
+      JSON.stringify({
+        overview: 'string',
+        theme: 'string',
+        tone: 'string',
+        characters: [
+          {
+            name: 'string',
+            role: 'string',
+            personality: 'string',
+            background: 'string',
+            goals: 'string',
+            relationships: 'string',
+            speechStyle: 'string (optional)',
+          },
+        ],
+        world: {
+          geography: 'string',
+          timePeriod: 'string',
+          socialContext: 'string (optional)',
+        },
+        timelineRules: 'string',
+        consistencyNotes: 'string',
+      }),
+      'characters は1人以上の配列にしてください。シードにない情報は物語として自然な範囲で補完して構いません。',
+    ].join('\n');
+
+    const sections = [
+      `概要シード: ${input.overview}`,
+      `テーマシード: ${input.theme}`,
+      `登場人物シード: ${input.characters}`,
+      `長さプリセット: ${input.length}`,
+    ];
+    if (input.tone) {
+      sections.push(`文調シード: ${input.tone}`);
+    }
+    if (input.setting) {
+      sections.push(`地理・時代などの設定シード: ${input.setting}`);
+    }
+    if (input.previousMetadata && input.feedback) {
+      sections.push(
+        '--- 前回提示した設定書 ---',
+        JSON.stringify({
+          overview: input.previousMetadata.overview,
+          theme: input.previousMetadata.theme,
+          tone: input.previousMetadata.tone,
+          characters: input.previousMetadata.characters,
+          world: input.previousMetadata.world,
+          timelineRules: input.previousMetadata.timelineRules,
+          consistencyNotes: input.previousMetadata.consistencyNotes,
+        }),
+        '--- ユーザーからの修正フィードバック ---',
+        input.feedback,
+        '上記フィードバックを反映して、設定書全体を改めて作成してください。',
+      );
+    }
+
+    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), DEFAULT_MAX_TOKENS);
+    return this.parseJson<GeneratedMetadata>(responseText);
+  }
+
   async generatePlan(input: GeneratePlanInput): Promise<GeneratedPlan> {
     const preset = STORY_LENGTH_PRESETS[input.length];
     const systemPrompt = [
       'あなたは短編・中編小説の編集者兼プロットライターです。',
-      '与えられた概要・テーマ・登場人物・文調から、小説の生成プランを作成してください。',
+      '与えられた物語設定書（登場人物・世界観・時間軸・一貫性制約）に厳密に従い、小説の生成プランを作成してください。',
+      '地理・時間経過・人物の性格/背景/関係性を矛盾させないこと。',
       '出力は必ず次のJSON形式のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
       '{"summary": string, "theme": string, "characters": string, "chapters": [{"index": number, "title": string, "outline": string}]}',
       `章は${preset.chapterCountHint}を目安に、物語として一貫した構成にしてください。indexは1から始まる連番にしてください。`,
       `各章の本文はおよそ${preset.targetCharsPerChapter}を想定して、章立ての粒度を決めてください。`,
+      'characters フィールドは設定書の登場人物を読みやすい日本語の要約文として書いてください。',
     ].join('\n');
 
     const sections = [
-      `概要: ${input.overview}`,
-      `テーマ: ${input.theme}`,
-      `登場人物: ${input.characters}`,
+      '--- 物語設定書 ---',
+      JSON.stringify(input.metadata),
       `長さプリセット: ${input.length}`,
     ];
-    if (input.tone) {
-      sections.push(`文調: ${input.tone}`);
-    }
     if (input.previousPlan && input.feedback) {
       sections.push(
         '--- 前回提示したプラン ---',
@@ -51,7 +117,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         }),
         '--- ユーザーからの修正フィードバック ---',
         input.feedback,
-        '上記フィードバックを反映して、プラン全体を改めて作成してください。',
+        '上記フィードバックを反映して、プラン全体を改めて作成してください。設定書との矛盾は作らないでください。',
       );
     }
 
@@ -65,12 +131,16 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       'あなたは小説家です。指定された章の本文のみを日本語で執筆してください。',
       '本文以外の説明・見出し・メタ情報は出力しないでください。',
       `この章の本文はおよそ${preset.targetCharsPerChapter}を目安に書いてください。`,
+      '物語設定書の人物・地理・時間ルール・一貫性制約を破ってはなりません。',
+      'プラン全体の章立てにおける当該章の位置づけを守り、前後の章との時間・場所の連続性を維持してください。',
     ].join('\n');
 
     const sections = [
-      `物語全体の概要: ${input.planSummary}`,
-      `テーマ: ${input.theme}`,
-      `登場人物: ${input.characters}`,
+      '--- 物語設定書（破ってはならない前提） ---',
+      JSON.stringify(input.metadata),
+      '--- 物語プラン全体 ---',
+      JSON.stringify(input.plan),
+      `この章の番号: ${input.chapterOutline.index}`,
       `この章のタイトル: ${input.chapterOutline.title}`,
       `この章で描くべき内容: ${input.chapterOutline.outline}`,
     ];
@@ -91,6 +161,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       '出力は必ず次のJSON形式のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
       '{"characterStates": string, "unresolvedForeshadowing": string, "timeAndPlace": string, "keyEvents": string}',
       '各項目は簡潔な日本語で書いてください。本文そのものを繰り返さないでください。',
+      'timeAndPlace には時刻・経過時間・季節・場所の相対関係を含めてください。',
     ].join('\n');
 
     const responseText = await this.converse(systemPrompt, chapterText, preset.summaryMaxTokens);

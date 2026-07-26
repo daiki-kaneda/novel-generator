@@ -15,7 +15,7 @@ export interface NovelApiProps {
 }
 
 /**
- * ユーザー操作（物語の送信、状態確認、プラン/章/最終原稿の承認・拒否、章本文取得）を
+ * ユーザー操作（物語の送信、状態確認、メタデータ/プラン/章/最終原稿の承認・拒否、章本文取得）を
  * 受け付ける HTTP API Gatewayと、それぞれに対応するLambda関数を定義する。
  */
 export class NovelApi extends Construct {
@@ -67,6 +67,16 @@ export class NovelApi extends Construct {
     });
     props.storyTable.grantReadData(getChapterContentFn);
     props.contentBucket.grantRead(getChapterContentFn);
+
+    const metadataDecisionFn = createHandlerFunction(this, 'MetadataDecisionFunction', {
+      entry: 'metadataDecision.ts',
+      description: 'POST /stories/{storyId}/metadata/decision: メタデータ（設定書）の承認/拒否',
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+      },
+    });
+    props.storyTable.grantReadWriteData(metadataDecisionFn);
+    metadataDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const planDecisionFn = createHandlerFunction(this, 'PlanDecisionFunction', {
       entry: 'planDecision.ts',
@@ -121,6 +131,11 @@ export class NovelApi extends Construct {
       path: '/stories/{storyId}/chapters/{chapterIndex}/content',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetChapterContentIntegration', getChapterContentFn),
+    });
+    this.httpApi.addRoutes({
+      path: '/stories/{storyId}/metadata/decision',
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration('MetadataDecisionIntegration', metadataDecisionFn),
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/plan/decision',

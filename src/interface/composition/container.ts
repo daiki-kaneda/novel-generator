@@ -16,6 +16,7 @@ import { SqsRequestQueue } from '../../infrastructure/sqs/SqsRequestQueue';
 import { SubmitStoryUseCase } from '../../application/use-cases/SubmitStoryUseCase';
 import { GetStoryStatusUseCase } from '../../application/use-cases/GetStoryStatusUseCase';
 import { GetChapterContentUseCase } from '../../application/use-cases/GetChapterContentUseCase';
+import { GenerateMetadataUseCase } from '../../application/use-cases/GenerateMetadataUseCase';
 import { GeneratePlanUseCase } from '../../application/use-cases/GeneratePlanUseCase';
 import { RequestApprovalUseCase } from '../../application/use-cases/RequestApprovalUseCase';
 import { DecideApprovalUseCase } from '../../application/use-cases/DecideApprovalUseCase';
@@ -89,6 +90,9 @@ export const container = {
         chapterContentStorage(),
         finalUrlExpirySeconds(),
       ),
+  ),
+  generateMetadataUseCase: lazy(
+    () => new GenerateMetadataUseCase(storyRepository(), novelTextGenerator()),
   ),
   generatePlanUseCase: lazy(
     () => new GeneratePlanUseCase(storyRepository(), novelTextGenerator()),

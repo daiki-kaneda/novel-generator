@@ -1,7 +1,6 @@
 /**
- * 物語生成リクエストの投入先（SQS）を抽象化するポート。
- * SQS → EventBridge Pipe → Step Functions StartExecution という経路を
- * ユースケースからは意識させない。
+ * 物語生成リクエストの投入先を抽象化するポート。
+ * ユースケースはキューの具体的な配送経路を意識しない。
  */
 export interface RequestQueue {
   enqueueStoryRequest(storyId: string): Promise<void>;

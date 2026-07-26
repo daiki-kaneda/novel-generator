@@ -5,6 +5,8 @@ import { ValidationError } from '../errors/DomainErrors';
 
 export type StoryStatus =
   | 'SUBMITTED'
+  | 'METADATA_GENERATING'
+  | 'AWAITING_METADATA_APPROVAL'
   | 'PLAN_GENERATING'
   | 'AWAITING_PLAN_APPROVAL'
   | 'CHAPTERS_GENERATING'
@@ -13,13 +15,17 @@ export type StoryStatus =
   | 'REVISING'
   | 'COMPLETED';
 
-/** ユーザーが送信する物語生成リクエストの内容。 */
+/** ユーザーが送信する物語生成リクエストの内容（シード）。設定書の正本ではない。 */
 export interface StoryRequest {
   overview: string;
   theme: string;
   characters: string;
   tone?: string;
+  /** 地理・時代などの任意ヒント。 */
+  setting?: string;
   userEmail: string;
+  /** メタデータ（設定書）承認を求めるか。デフォルト true。 */
+  requireMetadataApproval: boolean;
   /** プラン承認を求めるか。デフォルト true。 */
   requirePlanApproval: boolean;
   /** 各章の承認を求めるか。デフォルト false。 */
@@ -58,6 +64,7 @@ export class Story {
       status: 'SUBMITTED',
       request: {
         ...request,
+        requireMetadataApproval: request.requireMetadataApproval ?? true,
         requirePlanApproval: request.requirePlanApproval ?? true,
         requireChapterApproval: request.requireChapterApproval ?? false,
         length: resolveStoryLength(request.length),
@@ -73,6 +80,7 @@ export class Story {
       ...props,
       request: {
         ...request,
+        requireMetadataApproval: request.requireMetadataApproval ?? true,
         requirePlanApproval: request.requirePlanApproval ?? true,
         requireChapterApproval: request.requireChapterApproval ?? false,
         length: resolveStoryLength(request.length),
@@ -139,7 +147,7 @@ export class Story {
     this.touch();
   }
 
-  /** waitForTaskTokenで承認待ちに入ったことを記録する。 */
+  /** 承認待ちに入ったことを記録する（コールバックトークンを保持）。 */
   awaitApproval(stage: ApprovalStage, taskToken: string, chapterIndex?: number): void {
     this.props.taskStage = stage;
     this.props.currentTaskToken = taskToken;
@@ -151,12 +159,18 @@ export class Story {
       this.props.status = 'AWAITING_CHAPTER_APPROVAL';
     } else {
       this.props.currentChapterIndex = undefined;
-      this.props.status = stage === 'plan' ? 'AWAITING_PLAN_APPROVAL' : 'AWAITING_FINAL_APPROVAL';
+      if (stage === 'metadata') {
+        this.props.status = 'AWAITING_METADATA_APPROVAL';
+      } else if (stage === 'plan') {
+        this.props.status = 'AWAITING_PLAN_APPROVAL';
+      } else {
+        this.props.status = 'AWAITING_FINAL_APPROVAL';
+      }
     }
     this.touch();
   }
 
-  /** 承認/拒否の決定がStep Functionsに送信された後、待機状態を解除する。 */
+  /** 承認/拒否の決定通知後、待機状態を解除する。 */
   clearApproval(): void {
     this.props.currentTaskToken = undefined;
     this.props.taskStage = undefined;

@@ -2,6 +2,8 @@ import { StoryRepository } from '../../../src/application/ports/StoryRepository'
 import { ChapterContentStorage } from '../../../src/application/ports/ChapterContentStorage';
 import {
   NovelTextGenerator,
+  GenerateMetadataInput,
+  GeneratedMetadata,
   GeneratePlanInput,
   GeneratedPlan,
   GenerateChapterTextInput,
@@ -10,6 +12,7 @@ import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway'
 import { NotificationSender } from '../../../src/application/ports/NotificationSender';
 import { RequestQueue } from '../../../src/application/ports/RequestQueue';
 import { Story } from '../../../src/domain/entities/Story';
+import { StoryMetadata } from '../../../src/domain/entities/StoryMetadata';
 import { Plan } from '../../../src/domain/entities/Plan';
 import { Chapter } from '../../../src/domain/entities/Chapter';
 import { NotFoundError } from '../../../src/domain/errors/DomainErrors';
@@ -23,6 +26,7 @@ import { StoryLength } from '../../../src/domain/value-objects/StoryLength';
  */
 export class FakeStoryRepository implements StoryRepository {
   private readonly stories = new Map<string, Story>();
+  private readonly metadataByStory = new Map<string, StoryMetadata>();
   private readonly plans = new Map<string, Plan>();
   private readonly chapters = new Map<string, Map<number, Chapter>>();
 
@@ -40,6 +44,22 @@ export class FakeStoryRepository implements StoryRepository {
 
   async saveStory(story: Story): Promise<void> {
     this.stories.set(story.storyId, story);
+  }
+
+  async saveMetadata(storyId: string, metadata: StoryMetadata): Promise<void> {
+    this.metadataByStory.set(storyId, metadata);
+  }
+
+  async getMetadata(storyId: string): Promise<StoryMetadata> {
+    const metadata = await this.findMetadata(storyId);
+    if (!metadata) {
+      throw new NotFoundError(`Metadata for story ${storyId} not found`);
+    }
+    return metadata;
+  }
+
+  async findMetadata(storyId: string): Promise<StoryMetadata | null> {
+    return this.metadataByStory.get(storyId) ?? null;
   }
 
   async savePlan(storyId: string, plan: Plan): Promise<void> {
@@ -122,6 +142,28 @@ export class FakeChapterContentStorage implements ChapterContentStorage {
 }
 
 export class FakeNovelTextGenerator implements NovelTextGenerator {
+  generateMetadataResult: GeneratedMetadata = {
+    overview: 'fake overview',
+    theme: 'fake theme',
+    tone: 'fake tone',
+    characters: [
+      {
+        name: 'Hero',
+        role: '主人公',
+        personality: '勇敢',
+        background: '田舎育ち',
+        goals: '平和を守る',
+        relationships: '導師の弟子',
+      },
+    ],
+    world: {
+      geography: '北方の王国と南の港町',
+      timePeriod: '中世風ファンタジー',
+      socialContext: '封建制',
+    },
+    timelineRules: '章間は数日以内の経過を基本とする',
+    consistencyNotes: '魔法は稀少で代償を伴う',
+  };
   generatePlanResult: GeneratedPlan = {
     summary: 'fake summary',
     theme: 'fake theme',
@@ -130,6 +172,10 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
   };
   generateChapterTextResult = 'fake chapter text';
   summarizeChapterResult = 'fake chapter summary';
+
+  async generateMetadata(_input: GenerateMetadataInput): Promise<GeneratedMetadata> {
+    return this.generateMetadataResult;
+  }
 
   async generatePlan(_input: GeneratePlanInput): Promise<GeneratedPlan> {
     return this.generatePlanResult;

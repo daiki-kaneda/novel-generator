@@ -7,6 +7,7 @@ describe('Story', () => {
     theme: 'courage',
     characters: 'A young hero',
     userEmail: 'user@example.com',
+    requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
     length: 'short' as const,
@@ -17,9 +18,19 @@ describe('Story', () => {
 
     expect(story.status).toBe('SUBMITTED');
     expect(story.storyId).toHaveLength(36);
+    expect(story.request.requireMetadataApproval).toBe(true);
     expect(story.request.requirePlanApproval).toBe(true);
     expect(story.request.requireChapterApproval).toBe(false);
     expect(story.request.length).toBe('short');
+  });
+
+  it('tracks metadata approval wait state', () => {
+    const story = Story.submit(validRequest);
+
+    story.awaitApproval('metadata', 'metadata-token');
+    expect(story.status).toBe('AWAITING_METADATA_APPROVAL');
+    expect(story.currentTaskToken).toBe('metadata-token');
+    expect(story.taskStage).toBe('metadata');
   });
 
   it('tracks chapter approval wait state with the target chapter index', () => {

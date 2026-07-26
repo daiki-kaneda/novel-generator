@@ -24,7 +24,7 @@ export interface NovelWorkflowProps {
 
 /**
  * 小説生成ワークフローの中核となるStep Functions（Standard）ステートマシンと、
- * それが呼び出す各Lambda関数（プラン生成・承認待ち・章生成・仕上げ）を定義する。
+ * それが呼び出す各Lambda関数（メタデータ生成・プラン生成・承認待ち・章生成・仕上げ）を定義する。
  *
  * ワークフロー全体を通じて `storyId` をトップレベルに保持し、各タスクの結果は
  * `resultPath` で個別のキーにマージする（Lambdaの戻り値で `$` 全体を上書きしない）ことで、
@@ -52,6 +52,18 @@ export class NovelWorkflow extends Construct {
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
       resources: ['*'],
     });
+
+    const generateMetadataFn = createHandlerFunction(this, 'GenerateMetadataFunction', {
+      entry: 'generateMetadata.ts',
+      description: '物語設定書（登場人物・世界観・時間軸・一貫性制約）を生成/再生成する',
+      timeout: Duration.seconds(90),
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+        BEDROCK_MODEL_ID: props.bedrockModelId,
+      },
+    });
+    props.storyTable.grantReadWriteData(generateMetadataFn);
+    generateMetadataFn.addToRolePolicy(bedrockInvokeStatement);
 
     const generatePlanFn = createHandlerFunction(this, 'GeneratePlanFunction', {
       entry: 'generatePlan.ts',
@@ -105,6 +117,7 @@ export class NovelWorkflow extends Construct {
     finalizeNovelFn.addToRolePolicy(sesSendStatement);
 
     this.stateMachine = this.buildStateMachine({
+      generateMetadataFn,
       generatePlanFn,
       requestApprovalFn,
       generateChapterFn,
@@ -113,12 +126,60 @@ export class NovelWorkflow extends Construct {
   }
 
   private buildStateMachine(fns: {
+    generateMetadataFn: NodejsFunction;
     generatePlanFn: NodejsFunction;
     requestApprovalFn: NodejsFunction;
     generateChapterFn: NodejsFunction;
     finalizeNovelFn: NodejsFunction;
   }): sfn.StateMachine {
-    const { generatePlanFn, requestApprovalFn, generateChapterFn, finalizeNovelFn } = fns;
+    const {
+      generateMetadataFn,
+      generatePlanFn,
+      requestApprovalFn,
+      generateChapterFn,
+      finalizeNovelFn,
+    } = fns;
+
+    /** 承認待ちタスク（コールバックトークン保存）を共通生成する。 */
+    const requestApprovalTask = (
+      id: string,
+      stage: 'metadata' | 'plan' | 'chapter' | 'final',
+      resultPath: string,
+      options?: { includeChapterIndex?: boolean },
+    ) =>
+      new tasks.LambdaInvoke(this, id, {
+        lambdaFunction: requestApprovalFn,
+        integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
+        payload: sfn.TaskInput.fromObject({
+          storyId: sfn.JsonPath.stringAt('$.storyId'),
+          stage,
+          ...(options?.includeChapterIndex
+            ? { chapterIndex: sfn.JsonPath.numberAt('$.chapterIndex') }
+            : {}),
+          taskToken: sfn.JsonPath.taskToken,
+        }),
+        resultPath,
+      });
+
+    const generateMetadata = new tasks.LambdaInvoke(this, 'GenerateMetadata', {
+      lambdaFunction: generateMetadataFn,
+      payloadResponseOnly: true,
+      resultPath: '$.metadata',
+    });
+
+    const requestMetadataApproval = requestApprovalTask(
+      'RequestMetadataApproval',
+      'metadata',
+      '$.metadataDecision',
+    );
+
+    const mergeMetadataFeedback = new sfn.Pass(this, 'MergeMetadataFeedback', {
+      comment: 'メタデータ拒否フィードバックを反映し、次のGenerateMetadata呼び出し用に状態をリセットする',
+      parameters: {
+        'storyId.$': '$.storyId',
+        'feedback.$': '$.metadataDecision.feedback',
+      },
+    });
 
     const generatePlan = new tasks.LambdaInvoke(this, 'GeneratePlan', {
       lambdaFunction: generatePlanFn,
@@ -126,16 +187,11 @@ export class NovelWorkflow extends Construct {
       resultPath: '$.plan',
     });
 
-    const requestPlanApproval = new tasks.LambdaInvoke(this, 'RequestPlanApproval', {
-      lambdaFunction: requestApprovalFn,
-      integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-      payload: sfn.TaskInput.fromObject({
-        storyId: sfn.JsonPath.stringAt('$.storyId'),
-        stage: 'plan',
-        taskToken: sfn.JsonPath.taskToken,
-      }),
-      resultPath: '$.planDecision',
-    });
+    const requestPlanApproval = requestApprovalTask(
+      'RequestPlanApproval',
+      'plan',
+      '$.planDecision',
+    );
 
     const mergePlanFeedback = new sfn.Pass(this, 'MergePlanFeedback', {
       comment: 'プラン拒否フィードバックを反映し、次のGeneratePlan呼び出し用に状態をリセットする',
@@ -164,17 +220,12 @@ export class NovelWorkflow extends Construct {
       resultPath: sfn.JsonPath.DISCARD,
     });
 
-    const requestChapterApproval = new tasks.LambdaInvoke(this, 'RequestChapterApproval', {
-      lambdaFunction: requestApprovalFn,
-      integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-      payload: sfn.TaskInput.fromObject({
-        storyId: sfn.JsonPath.stringAt('$.storyId'),
-        stage: 'chapter',
-        chapterIndex: sfn.JsonPath.numberAt('$.chapterIndex'),
-        taskToken: sfn.JsonPath.taskToken,
-      }),
-      resultPath: '$.chapterDecision',
-    });
+    const requestChapterApproval = requestApprovalTask(
+      'RequestChapterApproval',
+      'chapter',
+      '$.chapterDecision',
+      { includeChapterIndex: true },
+    );
 
     const prepareChapterRevision = new sfn.Pass(this, 'PrepareChapterRevision', {
       comment: '章拒否フィードバックを次のGenerateChapter呼び出し用に載せる',
@@ -214,16 +265,11 @@ export class NovelWorkflow extends Construct {
     });
     generateChaptersMap.itemProcessor(generateChapter);
 
-    const requestFinalApproval = new tasks.LambdaInvoke(this, 'RequestFinalApproval', {
-      lambdaFunction: requestApprovalFn,
-      integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-      payload: sfn.TaskInput.fromObject({
-        storyId: sfn.JsonPath.stringAt('$.storyId'),
-        stage: 'final',
-        taskToken: sfn.JsonPath.taskToken,
-      }),
-      resultPath: '$.finalDecision',
-    });
+    const requestFinalApproval = requestApprovalTask(
+      'RequestFinalApproval',
+      'final',
+      '$.finalDecision',
+    );
 
     const finalize = new tasks.LambdaInvoke(this, 'Finalize', {
       lambdaFunction: finalizeNovelFn,
@@ -242,6 +288,17 @@ export class NovelWorkflow extends Construct {
       .when(sfn.Condition.booleanEquals('$.plan.requirePlanApproval', true), requestPlanApproval)
       .otherwise(generateChaptersMap);
 
+    const metadataApprovedChoice = new sfn.Choice(this, 'MetadataApproved?')
+      .when(sfn.Condition.booleanEquals('$.metadataDecision.approved', true), generatePlan)
+      .otherwise(mergeMetadataFeedback);
+
+    const metadataApprovalGate = new sfn.Choice(this, 'RequireMetadataApproval?')
+      .when(
+        sfn.Condition.booleanEquals('$.metadata.requireMetadataApproval', true),
+        requestMetadataApproval,
+      )
+      .otherwise(generatePlan);
+
     const finalApprovedChoice = new sfn.Choice(this, 'FinalApproved?')
       .when(sfn.Condition.booleanEquals('$.finalDecision.approved', true), finalize)
       .otherwise(mergeFinalFeedback);
@@ -251,11 +308,16 @@ export class NovelWorkflow extends Construct {
       .when(sfn.Condition.booleanEquals('$.plan.requireChapterApproval', false), requestFinalApproval)
       .otherwise(finalize);
 
+    mergeMetadataFeedback.next(generateMetadata);
     mergePlanFeedback.next(generatePlan);
     mergeFinalFeedback.next(generatePlan);
     generateChaptersMap.next(finalApprovalGate);
+    requestMetadataApproval.next(metadataApprovedChoice);
     requestPlanApproval.next(planApprovedChoice);
     requestFinalApproval.next(finalApprovedChoice);
+
+    generateMetadata.next(metadataApprovalGate);
+    generatePlan.next(planApprovalGate);
 
     // EventBridge Pipes(SQS)は batchSize=1 でも変換結果を配列で渡すため、先頭要素を取り出す
     const unwrapPipeBatch = new sfn.Pass(this, 'UnwrapPipeBatch', {
@@ -263,7 +325,7 @@ export class NovelWorkflow extends Construct {
       inputPath: '$[0]',
     });
 
-    const definition = unwrapPipeBatch.next(generatePlan).next(planApprovalGate);
+    const definition = unwrapPipeBatch.next(generateMetadata);
 
     return new sfn.StateMachine(this, 'StateMachine', {
       stateMachineType: sfn.StateMachineType.STANDARD,

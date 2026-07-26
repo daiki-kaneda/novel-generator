@@ -8,7 +8,11 @@ export interface SubmitStoryInput {
   theme: string;
   characters: string;
   tone?: string;
+  /** 地理・時代などの任意ヒント。 */
+  setting?: string;
   userEmail: string;
+  /** 省略時は true。 */
+  requireMetadataApproval?: boolean;
   /** 省略時は true。 */
   requirePlanApproval?: boolean;
   /** 省略時は false。 */
@@ -34,7 +38,9 @@ export class SubmitStoryUseCase {
       theme: input.theme,
       characters: input.characters,
       tone: input.tone,
+      setting: input.setting,
       userEmail: input.userEmail,
+      requireMetadataApproval: input.requireMetadataApproval ?? true,
       requirePlanApproval: input.requirePlanApproval ?? true,
       requireChapterApproval: input.requireChapterApproval ?? false,
       length: resolveStoryLength(input.length),

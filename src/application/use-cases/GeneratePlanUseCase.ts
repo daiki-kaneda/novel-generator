@@ -11,15 +11,16 @@ export interface GeneratePlanInput {
 
 export interface GeneratePlanOutput {
   storyId: string;
-  /** Step FunctionsのMapが章生成ループのitemsPathとして使う章index一覧。 */
+  /** 生成対象となる章indexの一覧（1始まり）。 */
   chapterIndexes: number[];
-  /** Step FunctionsのChoiceがDB再読込なしで判定するためのフラグ。 */
+  /** 呼び出し側が次工程（承認待ちへ進むかスキップするか）を決めるためのフラグ。 */
   requirePlanApproval: boolean;
   requireChapterApproval: boolean;
 }
 
 /**
  * プラン（概要・テーマ・登場人物・章構成）を生成、またはフィードバックに基づき再生成する。
+ * 入力の正本は承認済み（または承認スキップ済み）の StoryMetadata。
  * 生成後、章構成に合わせて章レコードを初期化し、次のステップ（承認依頼）に備える。
  */
 export class GeneratePlanUseCase {
@@ -33,13 +34,20 @@ export class GeneratePlanUseCase {
     story.moveTo('PLAN_GENERATING');
     await this.storyRepository.saveStory(story);
 
+    const metadata = await this.storyRepository.getMetadata(input.storyId);
     const previousPlan = await this.storyRepository.findPlan(input.storyId);
+    const metadataProps = metadata.toProps();
 
     const generated = await this.novelTextGenerator.generatePlan({
-      overview: story.request.overview,
-      theme: story.request.theme,
-      characters: story.request.characters,
-      tone: story.request.tone,
+      metadata: {
+        overview: metadataProps.overview,
+        theme: metadataProps.theme,
+        tone: metadataProps.tone,
+        characters: metadataProps.characters,
+        world: metadataProps.world,
+        timelineRules: metadataProps.timelineRules,
+        consistencyNotes: metadataProps.consistencyNotes,
+      },
       length: story.request.length,
       previousPlan: previousPlan?.toProps(),
       feedback: input.feedback,
@@ -47,8 +55,8 @@ export class GeneratePlanUseCase {
 
     const plan = Plan.create({
       summary: generated.summary,
-      theme: generated.theme,
-      characters: generated.characters,
+      theme: generated.theme || metadata.theme,
+      characters: generated.characters || metadata.charactersAsText(),
       chapters: generated.chapters,
     });
 

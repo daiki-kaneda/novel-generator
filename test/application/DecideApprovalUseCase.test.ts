@@ -14,6 +14,7 @@ async function buildAwaitingStory(
     theme: 'theme',
     characters: 'characters',
     userEmail: 'user@example.com',
+    requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
     length: 'short',
@@ -38,6 +39,23 @@ describe('DecideApprovalUseCase', () => {
 
     const updated = await repo.getStory(story.storyId);
     expect(updated.currentTaskToken).toBeUndefined();
+    expect(updated.taskStage).toBeUndefined();
+  });
+
+  it('accepts a metadata approval decision', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'metadata');
+    const useCase = new DecideApprovalUseCase(repo, gateway);
+
+    await useCase.execute({
+      storyId: story.storyId,
+      expectedStage: 'metadata',
+      approved: true,
+    });
+
+    expect(gateway.sentDecisions).toHaveLength(1);
+    const updated = await repo.getStory(story.storyId);
     expect(updated.taskStage).toBeUndefined();
   });
 

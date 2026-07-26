@@ -4,17 +4,18 @@ import { StoryRepository } from '../ports/StoryRepository';
 export interface RequestApprovalInput {
   storyId: string;
   stage: ApprovalStage;
-  /** Step Functionsの`waitForTaskToken`タスクから渡されるトークン。 */
+  /** 承認決定時にワークフローを再開するためのコールバックトークン。 */
   taskToken: string;
   /** stageが`chapter`のとき必須。 */
   chapterIndex?: number;
 }
 
 /**
- * Step Functionsが`waitForTaskToken`で待機状態に入る際、taskTokenを永続化する。
- * このユースケース自体はすぐに完了し、実際の「待機」はStep Functions側が行う。
- * 後続の承認/拒否API呼び出し（DecideApprovalUseCase）がここで保存したtaskTokenを使って
- * ワークフローを再開させる。
+ * 承認待ちに入る段階でコールバックトークンを永続化する。
+ *
+ * 注意: このユースケース自体はワークフローを停止しない。トークンを保存してすぐ完了するだけである。
+ * 実行の一時停止は呼び出し側のオーケストレーションが行い、再開は DecideApprovalUseCase が
+ * ここで保存したトークン経由の決定通知で行う。
  */
 export class RequestApprovalUseCase {
   constructor(private readonly storyRepository: StoryRepository) {}

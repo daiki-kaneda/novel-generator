@@ -2,7 +2,32 @@ import { GenerateChapterUseCase } from '../../src/application/use-cases/Generate
 import { Plan } from '../../src/domain/entities/Plan';
 import { Chapter } from '../../src/domain/entities/Chapter';
 import { Story } from '../../src/domain/entities/Story';
+import { StoryMetadata } from '../../src/domain/entities/StoryMetadata';
 import { FakeStoryRepository, FakeChapterContentStorage, FakeNovelTextGenerator } from './support/fakes';
+
+function sampleMetadata(): StoryMetadata {
+  return StoryMetadata.create({
+    overview: 'enriched overview',
+    theme: 'enriched theme',
+    tone: '緊張感のある文調',
+    characters: [
+      {
+        name: 'Hero',
+        role: '主人公',
+        personality: '勇敢',
+        background: '田舎育ち',
+        goals: '平和を守る',
+        relationships: '導師の弟子',
+      },
+    ],
+    world: {
+      geography: '北方の王国と南の港町',
+      timePeriod: '中世風ファンタジー',
+    },
+    timelineRules: '章間は数日以内',
+    consistencyNotes: '魔法は稀少',
+  });
+}
 
 async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<void> {
   const story = Story.submit({
@@ -10,6 +35,7 @@ async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<vo
     theme: 'theme',
     characters: 'characters',
     userEmail: 'user@example.com',
+    requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
     length: 'short',
@@ -20,6 +46,7 @@ async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<vo
     storyId,
   });
   await repo.createStory(restored);
+  await repo.saveMetadata(storyId, sampleMetadata());
 }
 
 describe('GenerateChapterUseCase', () => {
@@ -71,6 +98,49 @@ describe('GenerateChapterUseCase', () => {
     await expect(storage.getChapterText(storyId, chapter2.s3Key as string)).resolves.toBe(
       'generated chapter 2 text',
     );
+  });
+
+  it('passes full metadata and the entire plan to chapter generation', async () => {
+    const repo = new FakeStoryRepository();
+    const storage = new FakeChapterContentStorage();
+    const generator = new FakeNovelTextGenerator();
+    const storyId = 'story-full-context';
+    await seedStory(repo, storyId);
+
+    const chapters = [
+      { index: 1, title: 'Chapter 1', outline: 'outline 1' },
+      { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+    ];
+    await repo.savePlan(
+      storyId,
+      Plan.create({
+        summary: 'plan summary',
+        theme: 'plan theme',
+        characters: 'plan characters',
+        chapters,
+      }),
+    );
+    await repo.initializeChapters(
+      storyId,
+      chapters.map((outline) => Chapter.fromOutline(outline)),
+    );
+
+    let capturedMetadataTheme: string | undefined;
+    let capturedPlanChapterCount = 0;
+    generator.generateChapterText = async (input) => {
+      capturedMetadataTheme = input.metadata.theme;
+      capturedPlanChapterCount = input.plan.chapters.length;
+      expect(input.plan.summary).toBe('plan summary');
+      expect(input.chapterOutline.index).toBe(1);
+      expect(input.metadata.world.geography).toContain('北方');
+      return 'generated chapter 1 text';
+    };
+
+    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    await useCase.execute({ storyId, chapterIndex: 1 });
+
+    expect(capturedMetadataTheme).toBe('enriched theme');
+    expect(capturedPlanChapterCount).toBe(2);
   });
 
   it('does not pass a previous chapter summary for the first chapter', async () => {

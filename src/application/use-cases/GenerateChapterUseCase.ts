@@ -16,9 +16,8 @@ export interface GenerateChapterInput {
  * 指定された1章の本文を生成する。初回生成・改訂のどちらでも使用する
  * （`revisionFeedback`または章に既にある`revisionInstruction`があれば改訂として扱われる）。
  *
- * 前章の本文全体は渡さず、前章生成時に作成した「重要ポイントの要約」のみを
- * コンテキストとして暗黙的に引き渡すことで、Step FunctionsのMapステート
- * （イテレーション間でデータを直接連携できない）の制約を回避している。
+ * 一貫性のため設定書（Metadata）全体と Plan 全体（全章アウトライン）を渡し、
+ * 前章の本文全体は渡さず「重要ポイントの要約」のみをコンテキストとして使う。
  */
 export class GenerateChapterUseCase {
   constructor(
@@ -32,6 +31,7 @@ export class GenerateChapterUseCase {
     story.moveTo('CHAPTERS_GENERATING');
     await this.storyRepository.saveStory(story);
 
+    const metadata = await this.storyRepository.getMetadata(input.storyId);
     const plan = await this.storyRepository.getPlan(input.storyId);
     const chapter = await this.storyRepository.getChapter(input.storyId, input.chapterIndex);
 
@@ -45,10 +45,21 @@ export class GenerateChapterUseCase {
         ? await this.storyRepository.findChapter(input.storyId, input.chapterIndex - 1)
         : null;
 
+    const metadataProps = metadata.toProps();
     const chapterText = await this.novelTextGenerator.generateChapterText({
-      planSummary: plan.summary,
-      theme: plan.theme,
-      characters: plan.characters,
+      metadata: {
+        overview: metadataProps.overview,
+        theme: metadataProps.theme,
+        tone: metadataProps.tone,
+        characters: metadataProps.characters,
+        world: metadataProps.world,
+        timelineRules: metadataProps.timelineRules,
+        consistencyNotes: metadataProps.consistencyNotes,
+      },
+      plan: {
+        summary: plan.summary,
+        chapters: plan.chapters.map((outline) => ({ ...outline })),
+      },
       chapterOutline: { index: chapter.index, title: chapter.title, outline: chapter.outline },
       length: story.request.length,
       previousChapterSummary: previousChapter?.summaryKeyPoints,
