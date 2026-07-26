@@ -10,6 +10,8 @@ import {
 import { STORY_LENGTH_PRESETS, StoryLength } from '../../domain/value-objects/StoryLength';
 
 const DEFAULT_MAX_TOKENS = 4096;
+/** 設定書は人物追加の再生成などで長くなりやすいため、既定より余裕を持たせる。 */
+const METADATA_MAX_TOKENS = 8192;
 
 /**
  * Bedrock (Claude Sonnet) を使ったテキスト生成アダプタ。
@@ -52,6 +54,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         consistencyNotes: 'string',
       }),
       'characters は1人以上の配列にしてください。シードにない情報は物語として自然な範囲で補完して構いません。',
+      '各文字列フィールドは簡潔に（目安: 1〜3文）。長文の小説本文や重複説明は書かないでください。',
     ].join('\n');
 
     const sections = [
@@ -81,10 +84,11 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         '--- ユーザーからの修正フィードバック ---',
         input.feedback,
         '上記フィードバックを反映して、設定書全体を改めて作成してください。',
+        'フィードバックで追加が求められた要素は必ず含めつつ、各フィールドは簡潔に保ってください。',
       );
     }
 
-    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), DEFAULT_MAX_TOKENS);
+    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), METADATA_MAX_TOKENS);
     return this.parseJson<GeneratedMetadata>(responseText);
   }
 
