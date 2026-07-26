@@ -47,7 +47,11 @@ function lazy<T>(factory: () => T): () => T {
   };
 }
 
-const dynamoDbDocumentClient = lazy(() => DynamoDBDocumentClient.from(new DynamoDBClient({})));
+const dynamoDbDocumentClient = lazy(() =>
+  DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+    marshallOptions: { removeUndefinedValues: true },
+  }),
+);
 const s3Client = lazy(() => new S3Client({}));
 const bedrockClient = lazy(() => new BedrockRuntimeClient({}));
 const sfnClient = lazy(() => new SFNClient({}));
