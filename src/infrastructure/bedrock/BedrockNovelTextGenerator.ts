@@ -9,9 +9,10 @@ import {
 } from '../../application/ports/NovelTextGenerator';
 import { STORY_LENGTH_PRESETS, StoryLength } from '../../domain/value-objects/StoryLength';
 
-const DEFAULT_MAX_TOKENS = 4096;
-/** 設定書は人物追加の再生成などで長くなりやすいため、既定より余裕を持たせる。 */
+/** 設定書は人物追加の再生成などで長くなりやすいため、余裕を持たせる。 */
 const METADATA_MAX_TOKENS = 8192;
+/** プランは章アウトライン配列のため、再生成時に長くなりやすい。 */
+const PLAN_MAX_TOKENS = 8192;
 
 /**
  * Bedrock (Claude Sonnet) を使ったテキスト生成アダプタ。
@@ -103,6 +104,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       `章は${preset.chapterCountHint}を目安に、物語として一貫した構成にしてください。indexは1から始まる連番にしてください。`,
       `各章の本文はおよそ${preset.targetCharsPerChapter}を想定して、章立ての粒度を決めてください。`,
       'characters フィールドは設定書の登場人物を読みやすい日本語の要約文として書いてください。',
+      'summary / theme / characters は簡潔に。各章の outline は2〜4文程度に留め、本文そのものは書かないでください。',
     ].join('\n');
 
     const sections = [
@@ -122,10 +124,11 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         '--- ユーザーからの修正フィードバック ---',
         input.feedback,
         '上記フィードバックを反映して、プラン全体を改めて作成してください。設定書との矛盾は作らないでください。',
+        'フィードバックを反映しつつ、各章 outline は簡潔に保ってください。',
       );
     }
 
-    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), DEFAULT_MAX_TOKENS);
+    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), PLAN_MAX_TOKENS);
     return this.parseJson<GeneratedPlan>(responseText);
   }
 
