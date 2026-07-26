@@ -29,7 +29,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
     const systemPrompt = [
       'あなたは短編・中編小説の編集者兼設定担当です。',
       'ユーザーが与えた概要・テーマ・登場人物などのシード情報を元に、執筆の正本となる物語設定書を作成してください。',
-      '登場人物は性格・背景・目的・関係性まで具体化し、地理・時代・時間経過ルール・一貫性制約を明確にしてください。',
+      '登場人物は性格・背景・目的・関係性・外見まで具体化し、地理・時代・時間経過ルール・一貫性制約を明確にしてください。',
       '出力は必ず次のJSON形式のみで返してください（説明文やマークダウンのコードブロックは付けないこと）。',
       JSON.stringify({
         overview: 'string',
@@ -44,6 +44,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
             goals: 'string',
             relationships: 'string',
             speechStyle: 'string (optional)',
+            appearance: 'string (optional, 年齢感・体格・髪型・服装などの特徴を1文程度で)',
           },
         ],
         world: {
@@ -55,7 +56,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         consistencyNotes: 'string',
       }),
       'characters は1人以上の配列にしてください。シードにない情報は物語として自然な範囲で補完して構いません。',
-      '各文字列フィールドは簡潔に（目安: 1〜3文）。長文の小説本文や重複説明は書かないでください。',
+      '各文字列フィールドは簡潔に（目安: 1〜3文）。appearance は識別に足りる特徴だけを短く書き、長文の小説本文や重複説明は書かないでください。',
     ].join('\n');
 
     const sections = [
@@ -138,7 +139,7 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       'あなたは小説家です。指定された章の本文のみを日本語で執筆してください。',
       '本文以外の説明・見出し・メタ情報は出力しないでください。',
       `この章の本文はおよそ${preset.targetCharsPerChapter}を目安に書いてください。`,
-      '物語設定書の人物・地理・時間ルール・一貫性制約を破ってはなりません。',
+      '物語設定書の人物（性格・外見・話し方を含む）・地理・時間ルール・一貫性制約を破ってはなりません。',
       'プラン全体の章立てにおける当該章の位置づけを守り、前後の章との時間・場所の連続性を維持してください。',
     ].join('\n');
 

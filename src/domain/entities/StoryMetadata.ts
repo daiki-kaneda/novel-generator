@@ -9,6 +9,8 @@ export interface CharacterProfile {
   goals: string;
   relationships: string;
   speechStyle?: string;
+  /** 年齢感・体格・髪型・服装などの外見上の特徴（簡潔に）。 */
+  appearance?: string;
 }
 
 /** 地理・時代・社会的背景。 */
@@ -115,6 +117,9 @@ export class StoryMetadata {
           `目的: ${c.goals}`,
           `関係: ${c.relationships}`,
         ];
+        if (c.appearance) {
+          parts.push(`外見: ${c.appearance}`);
+        }
         if (c.speechStyle) {
           parts.push(`話し方: ${c.speechStyle}`);
         }

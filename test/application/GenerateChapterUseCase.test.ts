@@ -18,6 +18,7 @@ function sampleMetadata(): StoryMetadata {
         background: '田舎育ち',
         goals: '平和を守る',
         relationships: '導師の弟子',
+        appearance: '短髪で旅装の少年',
       },
     ],
     world: {
