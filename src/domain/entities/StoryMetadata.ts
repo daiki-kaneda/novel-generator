@@ -106,7 +106,7 @@ export class StoryMetadata {
     return this.props.revisionHistory;
   }
 
-  /** Plan.characters 用に平坦な文字列へ要約する。 */
+  /** 登場人物プロフィールを読みやすい日本語の要約文へ平坦化する。 */
   charactersAsText(): string {
     return this.props.characters
       .map((c) => {

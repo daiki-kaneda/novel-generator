@@ -37,7 +37,7 @@ export interface StoryStatusOutput {
   plan?: {
     summary: string;
     theme: string;
-    characters: string;
+    characters: CharacterProfile[];
     chapters: ChapterOutline[];
   };
   chapters: Array<{
@@ -90,7 +90,7 @@ export class GetStoryStatusUseCase {
         ? {
             summary: plan.summary,
             theme: plan.theme,
-            characters: plan.characters,
+            characters: plan.characters.map((c) => ({ ...c })),
             chapters: [...plan.chapters],
           }
         : undefined,

@@ -61,6 +61,15 @@ export class Chapter {
     return this.props.status === 'DONE';
   }
 
+  /**
+   * Plan側の最新 title/outline に同期する。
+   * 章生成直前に呼び、実際に使われたアウトラインと永続化レコードを一致させる。
+   */
+  alignOutline(title: string, outline: string): void {
+    this.props.title = title;
+    this.props.outline = outline;
+  }
+
   /** 拒否フィードバックに基づき、この章を改訂対象としてマークする。 */
   requestRevision(instruction: string): void {
     this.props.revisionInstruction = instruction;

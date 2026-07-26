@@ -1,26 +1,22 @@
 import { GenerateChapterUseCase } from '../../src/application/use-cases/GenerateChapterUseCase';
 import { Plan } from '../../src/domain/entities/Plan';
-import { Chapter } from '../../src/domain/entities/Chapter';
+import { Chapter, ChapterOutline } from '../../src/domain/entities/Chapter';
 import { Story } from '../../src/domain/entities/Story';
 import { StoryMetadata } from '../../src/domain/entities/StoryMetadata';
-import { FakeStoryRepository, FakeChapterContentStorage, FakeNovelTextGenerator } from './support/fakes';
+import {
+  FakeStoryRepository,
+  FakeChapterContentStorage,
+  FakeNovelTextGenerator,
+  SAMPLE_PLAN_CHARACTERS,
+} from './support/fakes';
+import { RevisePlanInput } from '../../src/application/ports/NovelTextGenerator';
 
 function sampleMetadata(): StoryMetadata {
   return StoryMetadata.create({
     overview: 'enriched overview',
     theme: 'enriched theme',
     tone: '緊張感のある文調',
-    characters: [
-      {
-        name: 'Hero',
-        role: '主人公',
-        personality: '勇敢',
-        background: '田舎育ち',
-        goals: '平和を守る',
-        relationships: '導師の弟子',
-        appearance: '短髪で旅装の少年',
-      },
-    ],
+    characters: SAMPLE_PLAN_CHARACTERS.map((c) => ({ ...c })),
     world: {
       geography: '北方の王国と南の港町',
       timePeriod: '中世風ファンタジー',
@@ -63,7 +59,7 @@ describe('GenerateChapterUseCase', () => {
       Plan.create({
         summary: 'summary',
         theme: 'theme',
-        characters: 'characters',
+        characters: SAMPLE_PLAN_CHARACTERS,
         chapters: [
           { index: 1, title: 'Chapter 1', outline: 'outline 1' },
           { index: 2, title: 'Chapter 2', outline: 'outline 2' },
@@ -101,23 +97,34 @@ describe('GenerateChapterUseCase', () => {
     );
   });
 
-  it('passes full metadata and the entire plan to chapter generation', async () => {
+  it('masks future chapters and uses plan characters (not metadata characters) when generating', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
     const storyId = 'story-full-context';
     await seedStory(repo, storyId);
 
+    const planCharacters = [
+      {
+        name: 'Plan Hero',
+        role: '主人公',
+        personality: '慎重',
+        background: '都市育ち',
+        goals: '真実を知る',
+        relationships: '孤独',
+      },
+    ];
     const chapters = [
       { index: 1, title: 'Chapter 1', outline: 'outline 1' },
       { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+      { index: 3, title: 'Chapter 3', outline: 'outline 3' },
     ];
     await repo.savePlan(
       storyId,
       Plan.create({
         summary: 'plan summary',
         theme: 'plan theme',
-        characters: 'plan characters',
+        characters: planCharacters,
         chapters,
       }),
     );
@@ -127,10 +134,14 @@ describe('GenerateChapterUseCase', () => {
     );
 
     let capturedMetadataTheme: string | undefined;
-    let capturedPlanChapterCount = 0;
+    let capturedPlanChapterIndexes: number[] = [];
+    let capturedPlanCharacterName: string | undefined;
+    let metadataHasCharactersKey = true;
     generator.generateChapterText = async (input) => {
       capturedMetadataTheme = input.metadata.theme;
-      capturedPlanChapterCount = input.plan.chapters.length;
+      capturedPlanChapterIndexes = input.plan.chapters.map((c) => c.index);
+      capturedPlanCharacterName = input.plan.characters[0]?.name;
+      metadataHasCharactersKey = 'characters' in input.metadata;
       expect(input.plan.summary).toBe('plan summary');
       expect(input.chapterOutline.index).toBe(1);
       expect(input.metadata.world.geography).toContain('北方');
@@ -141,7 +152,227 @@ describe('GenerateChapterUseCase', () => {
     await useCase.execute({ storyId, chapterIndex: 1 });
 
     expect(capturedMetadataTheme).toBe('enriched theme');
-    expect(capturedPlanChapterCount).toBe(2);
+    expect(capturedPlanChapterIndexes).toEqual([1]);
+    expect(capturedPlanCharacterName).toBe('Plan Hero');
+    expect(metadataHasCharactersKey).toBe(false);
+  });
+
+  it('uses the latest plan outline for chapterOutline even if the chapter record is stale', async () => {
+    const repo = new FakeStoryRepository();
+    const storage = new FakeChapterContentStorage();
+    const generator = new FakeNovelTextGenerator();
+    const storyId = 'story-stale-outline';
+    await seedStory(repo, storyId);
+
+    await repo.savePlan(
+      storyId,
+      Plan.create({
+        summary: 'summary',
+        theme: 'theme',
+        characters: SAMPLE_PLAN_CHARACTERS,
+        chapters: [
+          { index: 1, title: 'Revised Title 1', outline: 'revised outline 1' },
+          { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+        ],
+      }),
+    );
+    await repo.initializeChapters(storyId, [
+      Chapter.fromOutline({ index: 1, title: 'Old Title 1', outline: 'old outline 1' }),
+      Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
+    ]);
+
+    let capturedTitle: string | undefined;
+    let capturedOutline: string | undefined;
+    generator.generateChapterText = async (input) => {
+      capturedTitle = input.chapterOutline.title;
+      capturedOutline = input.chapterOutline.outline;
+      return 'generated chapter 1 text';
+    };
+
+    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    await useCase.execute({ storyId, chapterIndex: 1 });
+
+    expect(capturedTitle).toBe('Revised Title 1');
+    expect(capturedOutline).toBe('revised outline 1');
+
+    const chapter1 = await repo.getChapter(storyId, 1);
+    expect(chapter1.title).toBe('Revised Title 1');
+    expect(chapter1.outline).toBe('revised outline 1');
+  });
+
+  it('revises future plan chapters and characters after a non-final chapter completes', async () => {
+    const repo = new FakeStoryRepository();
+    const storage = new FakeChapterContentStorage();
+    const generator = new FakeNovelTextGenerator();
+    const storyId = 'story-revise-plan';
+    await seedStory(repo, storyId);
+
+    await repo.savePlan(
+      storyId,
+      Plan.create({
+        summary: 'summary',
+        theme: 'theme',
+        characters: SAMPLE_PLAN_CHARACTERS,
+        chapters: [
+          { index: 1, title: 'Chapter 1', outline: 'outline 1' },
+          { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+          { index: 3, title: 'Chapter 3', outline: 'outline 3' },
+        ],
+      }),
+    );
+    await repo.initializeChapters(storyId, [
+      Chapter.fromOutline({ index: 1, title: 'Chapter 1', outline: 'outline 1' }),
+      Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
+      Chapter.fromOutline({ index: 3, title: 'Chapter 3', outline: 'outline 3' }),
+    ]);
+
+    let reviseCalled = false;
+    let capturedReviseInput: RevisePlanInput | undefined;
+    generator.revisePlan = async (input) => {
+      reviseCalled = true;
+      capturedReviseInput = input;
+      return {
+        chapters: [
+          { index: 2, title: 'Revised Chapter 2', outline: 'revised outline 2' },
+          { index: 3, title: 'Revised Chapter 3', outline: 'revised outline 3' },
+        ],
+        characters: [
+          {
+            ...SAMPLE_PLAN_CHARACTERS[0],
+            goals: '剣を手に入れた今、王国を救う',
+            relationships: '導師への疑念が芽生えている',
+          },
+          {
+            name: 'Mentor',
+            role: '導師',
+            personality: '謎めいた',
+            background: '古の騎士',
+            goals: '弟子を試練にかける',
+            relationships: 'Hero の師匠',
+          },
+        ],
+      };
+    };
+
+    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    await useCase.execute({ storyId, chapterIndex: 1 });
+
+    expect(reviseCalled).toBe(true);
+    expect(capturedReviseInput?.futureChapters.map((c) => c.index)).toEqual([2, 3]);
+    expect(capturedReviseInput?.completedChapter.index).toBe(1);
+    expect(capturedReviseInput?.planSummary).toBe('summary');
+    expect(capturedReviseInput?.planTheme).toBe('theme');
+    expect(capturedReviseInput?.characters).toHaveLength(1);
+    expect(capturedReviseInput?.metadata).not.toHaveProperty('characters');
+
+    const plan = await repo.getPlan(storyId);
+    expect(plan.chapters[0]).toEqual({ index: 1, title: 'Chapter 1', outline: 'outline 1' });
+    expect(plan.chapters[1]).toEqual({
+      index: 2,
+      title: 'Revised Chapter 2',
+      outline: 'revised outline 2',
+    });
+    expect(plan.chapters[2]).toEqual({
+      index: 3,
+      title: 'Revised Chapter 3',
+      outline: 'revised outline 3',
+    });
+    expect(plan.summary).toBe('summary');
+    expect(plan.theme).toBe('theme');
+    expect(plan.characters).toHaveLength(2);
+    expect(plan.characters[0].goals).toContain('王国を救う');
+    expect(plan.characters[1].name).toBe('Mentor');
+  });
+
+  it('does not revise the plan after the final chapter', async () => {
+    const repo = new FakeStoryRepository();
+    const storage = new FakeChapterContentStorage();
+    const generator = new FakeNovelTextGenerator();
+    const storyId = 'story-final-chapter';
+    await seedStory(repo, storyId);
+
+    await repo.savePlan(
+      storyId,
+      Plan.create({
+        summary: 'summary',
+        theme: 'theme',
+        characters: SAMPLE_PLAN_CHARACTERS,
+        chapters: [
+          { index: 1, title: 'Chapter 1', outline: 'outline 1' },
+          { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+        ],
+      }),
+    );
+    await repo.initializeChapters(storyId, [
+      Chapter.restore({
+        index: 1,
+        title: 'Chapter 1',
+        outline: 'outline 1',
+        status: 'DONE',
+        s3Key: 'stories/story-final-chapter/chapters/1.txt',
+        summaryKeyPoints: 'summary 1',
+      }),
+      Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
+    ]);
+
+    let reviseCalled = false;
+    generator.revisePlan = async (input) => {
+      reviseCalled = true;
+      return {
+        chapters: input.futureChapters,
+        characters: input.characters,
+      };
+    };
+
+    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    await useCase.execute({ storyId, chapterIndex: 2 });
+
+    expect(reviseCalled).toBe(false);
+  });
+
+  it('keeps the existing plan when revisePlan fails', async () => {
+    const repo = new FakeStoryRepository();
+    const storage = new FakeChapterContentStorage();
+    const generator = new FakeNovelTextGenerator();
+    const storyId = 'story-revise-fail';
+    await seedStory(repo, storyId);
+
+    const originalChapters: ChapterOutline[] = [
+      { index: 1, title: 'Chapter 1', outline: 'outline 1' },
+      { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+    ];
+    await repo.savePlan(
+      storyId,
+      Plan.create({
+        summary: 'summary',
+        theme: 'theme',
+        characters: SAMPLE_PLAN_CHARACTERS,
+        chapters: originalChapters,
+      }),
+    );
+    await repo.initializeChapters(
+      storyId,
+      originalChapters.map((outline) => Chapter.fromOutline(outline)),
+    );
+
+    generator.revisePlan = async () => {
+      throw new Error('bedrock revise failed');
+    };
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    await expect(useCase.execute({ storyId, chapterIndex: 1 })).resolves.toBeUndefined();
+
+    const chapter1 = await repo.getChapter(storyId, 1);
+    expect(chapter1.isDone()).toBe(true);
+
+    const plan = await repo.getPlan(storyId);
+    expect(plan.chapters).toEqual(originalChapters);
+    expect(plan.characters).toEqual(SAMPLE_PLAN_CHARACTERS);
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 
   it('does not pass a previous chapter summary for the first chapter', async () => {
@@ -156,7 +387,7 @@ describe('GenerateChapterUseCase', () => {
       Plan.create({
         summary: 'summary',
         theme: 'theme',
-        characters: 'characters',
+        characters: SAMPLE_PLAN_CHARACTERS,
         chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
       }),
     );
@@ -188,7 +419,7 @@ describe('GenerateChapterUseCase', () => {
       Plan.create({
         summary: 'summary',
         theme: 'theme',
-        characters: 'characters',
+        characters: SAMPLE_PLAN_CHARACTERS,
         chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
       }),
     );

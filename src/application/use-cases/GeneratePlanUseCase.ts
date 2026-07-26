@@ -56,7 +56,11 @@ export class GeneratePlanUseCase {
     const plan = Plan.create({
       summary: generated.summary,
       theme: generated.theme || metadata.theme,
-      characters: generated.characters || metadata.charactersAsText(),
+      // Plan.characters が執筆時の正本。生成欠落時は承認済み Metadata を初期値としてコピーする。
+      characters:
+        generated.characters?.length > 0
+          ? generated.characters
+          : metadata.characters.map((c) => ({ ...c })),
       chapters: generated.chapters,
     });
 

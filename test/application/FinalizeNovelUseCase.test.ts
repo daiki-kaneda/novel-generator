@@ -6,6 +6,7 @@ import {
   FakeStoryRepository,
   FakeChapterContentStorage,
   FakeNotificationSender,
+  SAMPLE_PLAN_CHARACTERS,
 } from './support/fakes';
 
 describe('FinalizeNovelUseCase', () => {
@@ -30,7 +31,7 @@ describe('FinalizeNovelUseCase', () => {
       Plan.create({
         summary: 'A story about a hero.',
         theme: 'theme',
-        characters: 'characters',
+        characters: SAMPLE_PLAN_CHARACTERS,
         chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
       }),
     );
@@ -84,7 +85,7 @@ describe('FinalizeNovelUseCase', () => {
       Plan.create({
         summary: 'summary',
         theme: 'theme',
-        characters: 'characters',
+        characters: SAMPLE_PLAN_CHARACTERS,
         chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
       }),
     );

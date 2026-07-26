@@ -7,17 +7,31 @@ import {
   GeneratePlanInput,
   GeneratedPlan,
   GenerateChapterTextInput,
+  RevisePlanInput,
+  RevisedPlan,
 } from '../../../src/application/ports/NovelTextGenerator';
 import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway';
 import { NotificationSender } from '../../../src/application/ports/NotificationSender';
 import { RequestQueue } from '../../../src/application/ports/RequestQueue';
 import { Story } from '../../../src/domain/entities/Story';
-import { StoryMetadata } from '../../../src/domain/entities/StoryMetadata';
+import { CharacterProfile, StoryMetadata } from '../../../src/domain/entities/StoryMetadata';
 import { Plan } from '../../../src/domain/entities/Plan';
 import { Chapter } from '../../../src/domain/entities/Chapter';
 import { NotFoundError } from '../../../src/domain/errors/DomainErrors';
 import { ApprovalDecision } from '../../../src/domain/value-objects/ApprovalDecision';
 import { StoryLength } from '../../../src/domain/value-objects/StoryLength';
+
+export const SAMPLE_PLAN_CHARACTERS: CharacterProfile[] = [
+  {
+    name: 'Hero',
+    role: '主人公',
+    personality: '勇敢',
+    background: '田舎育ち',
+    goals: '平和を守る',
+    relationships: '導師の弟子',
+    appearance: '短髪で旅装の少年',
+  },
+];
 
 /**
  * ユースケースをAWSに依存せずテストするためのインメモリなFake実装群。
@@ -168,7 +182,7 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
   generatePlanResult: GeneratedPlan = {
     summary: 'fake summary',
     theme: 'fake theme',
-    characters: 'fake characters',
+    characters: SAMPLE_PLAN_CHARACTERS.map((c) => ({ ...c })),
     chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
   };
   generateChapterTextResult = 'fake chapter text';
@@ -188,6 +202,14 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
 
   async summarizeChapter(_chapterText: string, _length: StoryLength): Promise<string> {
     return this.summarizeChapterResult;
+  }
+
+  /** デフォルトは入力の未来章・登場人物をそのまま返す（改訂なし）。 */
+  async revisePlan(input: RevisePlanInput): Promise<RevisedPlan> {
+    return {
+      chapters: input.futureChapters.map((chapter) => ({ ...chapter })),
+      characters: input.characters.map((c) => ({ ...c })),
+    };
   }
 }
 
