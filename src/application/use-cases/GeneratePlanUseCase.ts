@@ -1,4 +1,4 @@
-import { Plan } from '../../domain/entities/Plan';
+import { Plan, PlanSnapshot } from '../../domain/entities/Plan';
 import { Chapter } from '../../domain/entities/Chapter';
 import { StoryRepository } from '../ports/StoryRepository';
 import { NovelTextGenerator } from '../ports/NovelTextGenerator';
@@ -75,6 +75,17 @@ export class GeneratePlanUseCase {
     await this.storyRepository.initializeChapters(
       input.storyId,
       plan.chapters.map((outline) => Chapter.fromOutline(outline)),
+    );
+
+    // Plan 再生成時は旧変遷を消し、初期スナップショットだけを残す。
+    await this.storyRepository.clearPlanSnapshots(input.storyId);
+    await this.storyRepository.savePlanSnapshot(
+      input.storyId,
+      PlanSnapshot.create({
+        afterChapterIndex: 0,
+        trigger: 'initial',
+        plan: plan.toProps(),
+      }),
     );
 
     return {

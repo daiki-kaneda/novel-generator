@@ -1,6 +1,6 @@
 import { Story } from '../../domain/entities/Story';
 import { StoryMetadata } from '../../domain/entities/StoryMetadata';
-import { Plan } from '../../domain/entities/Plan';
+import { Plan, PlanSnapshot } from '../../domain/entities/Plan';
 import { Chapter } from '../../domain/entities/Chapter';
 
 /**
@@ -20,6 +20,13 @@ export interface StoryRepository {
   savePlan(storyId: string, plan: Plan): Promise<void>;
   getPlan(storyId: string): Promise<Plan>;
   findPlan(storyId: string): Promise<Plan | null>;
+
+  /** Plan 変遷スナップショットを保存する（同一 afterChapterIndex は上書き）。 */
+  savePlanSnapshot(storyId: string, snapshot: PlanSnapshot): Promise<void>;
+  /** Plan 変遷スナップショットを afterChapterIndex 昇順で返す。 */
+  listPlanSnapshots(storyId: string): Promise<PlanSnapshot[]>;
+  /** Plan 再生成時に旧スナップショットをすべて削除する。 */
+  clearPlanSnapshots(storyId: string): Promise<void>;
 
   /** プラン（再）生成時に、章構成に合わせて章レコード一式を初期化（上書き）する。 */
   initializeChapters(storyId: string, chapters: Chapter[]): Promise<void>;

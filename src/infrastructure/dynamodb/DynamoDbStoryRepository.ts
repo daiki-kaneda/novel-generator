@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Story, StoryMetaProps } from '../../domain/entities/Story';
 import { StoryMetadata, StoryMetadataProps } from '../../domain/entities/StoryMetadata';
-import { Plan, PlanProps } from '../../domain/entities/Plan';
+import { Plan, PlanProps, PlanSnapshot, PlanSnapshotProps } from '../../domain/entities/Plan';
 import { Chapter, ChapterProps } from '../../domain/entities/Chapter';
 import { NotFoundError } from '../../domain/errors/DomainErrors';
 import { StoryRepository } from '../../application/ports/StoryRepository';
@@ -15,6 +15,7 @@ import { StoryRepository } from '../../application/ports/StoryRepository';
 const META_RECORD_TYPE = 'META';
 const METADATA_RECORD_TYPE = 'METADATA';
 const PLAN_RECORD_TYPE = 'PLAN';
+const PLAN_SNAPSHOT_RECORD_PREFIX = 'PLAN#SNAP#';
 const CHAPTER_RECORD_PREFIX = 'CHAPTER#';
 const BATCH_WRITE_CHUNK_SIZE = 25;
 
@@ -122,6 +123,63 @@ export class DynamoDbStoryRepository implements StoryRepository {
     return Plan.restore(planProps as PlanProps);
   }
 
+  async savePlanSnapshot(storyId: string, snapshot: PlanSnapshot): Promise<void> {
+    const props = snapshot.toProps();
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: {
+          storyId,
+          recordType: this.planSnapshotRecordType(props.afterChapterIndex),
+          afterChapterIndex: props.afterChapterIndex,
+          trigger: props.trigger,
+          recordedAt: props.recordedAt,
+          plan: props.plan,
+        },
+      }),
+    );
+  }
+
+  async listPlanSnapshots(storyId: string): Promise<PlanSnapshot[]> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'storyId = :storyId AND begins_with(recordType, :prefix)',
+        ExpressionAttributeValues: {
+          ':storyId': storyId,
+          ':prefix': PLAN_SNAPSHOT_RECORD_PREFIX,
+        },
+      }),
+    );
+    return (result.Items ?? [])
+      .map((item) => this.fromPlanSnapshotItem(item))
+      .sort((a, b) => a.afterChapterIndex - b.afterChapterIndex);
+  }
+
+  async clearPlanSnapshots(storyId: string): Promise<void> {
+    const existing = await this.listPlanSnapshots(storyId);
+    if (existing.length === 0) {
+      return;
+    }
+    for (let i = 0; i < existing.length; i += BATCH_WRITE_CHUNK_SIZE) {
+      const chunk = existing.slice(i, i + BATCH_WRITE_CHUNK_SIZE);
+      await this.client.send(
+        new BatchWriteCommand({
+          RequestItems: {
+            [this.tableName]: chunk.map((snapshot) => ({
+              DeleteRequest: {
+                Key: {
+                  storyId,
+                  recordType: this.planSnapshotRecordType(snapshot.afterChapterIndex),
+                },
+              },
+            })),
+          },
+        }),
+      );
+    }
+  }
+
   async initializeChapters(storyId: string, chapters: Chapter[]): Promise<void> {
     const items = chapters.map((chapter) => this.toChapterItem(storyId, chapter));
     for (let i = 0; i < items.length; i += BATCH_WRITE_CHUNK_SIZE) {
@@ -183,6 +241,10 @@ export class DynamoDbStoryRepository implements StoryRepository {
     return `${CHAPTER_RECORD_PREFIX}${String(index).padStart(4, '0')}`;
   }
 
+  private planSnapshotRecordType(afterChapterIndex: number): string {
+    return `${PLAN_SNAPSHOT_RECORD_PREFIX}${String(afterChapterIndex).padStart(4, '0')}`;
+  }
+
   private toMetaItem(props: StoryMetaProps): Record<string, unknown> {
     return { ...props, storyId: props.storyId, recordType: META_RECORD_TYPE };
   }
@@ -203,5 +265,22 @@ export class DynamoDbStoryRepository implements StoryRepository {
   private fromChapterItem(item: Record<string, unknown>): Chapter {
     const { storyId: _storyId, recordType: _recordType, ...rest } = item;
     return Chapter.restore(rest as unknown as ChapterProps);
+  }
+
+  private fromPlanSnapshotItem(item: Record<string, unknown>): PlanSnapshot {
+    const {
+      storyId: _storyId,
+      recordType: _recordType,
+      afterChapterIndex,
+      trigger,
+      recordedAt,
+      plan,
+    } = item;
+    return PlanSnapshot.restore({
+      afterChapterIndex: afterChapterIndex as number,
+      trigger: trigger as PlanSnapshotProps['trigger'],
+      recordedAt: recordedAt as string,
+      plan: plan as PlanProps,
+    });
   }
 }

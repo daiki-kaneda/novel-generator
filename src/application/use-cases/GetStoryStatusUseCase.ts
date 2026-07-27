@@ -4,6 +4,7 @@ import {
   CharacterProfile,
   WorldSetting,
 } from '../../domain/entities/StoryMetadata';
+import { PlanProps, PlanSnapshotTrigger } from '../../domain/entities/Plan';
 import { ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
 import { StoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
@@ -40,6 +41,13 @@ export interface StoryStatusOutput {
     characters: CharacterProfile[];
     chapters: ChapterOutline[];
   };
+  /** Plan 変遷スナップショット（初期 + 各章改訂後）。デバッグ・品質確認用。 */
+  planSnapshots: Array<{
+    afterChapterIndex: number;
+    trigger: PlanSnapshotTrigger;
+    recordedAt: string;
+    plan: PlanProps;
+  }>;
   chapters: Array<{
     index: number;
     title: string;
@@ -57,6 +65,7 @@ export class GetStoryStatusUseCase {
     const story = await this.storyRepository.getStory(storyId);
     const metadata = await this.storyRepository.findMetadata(storyId);
     const plan = await this.storyRepository.findPlan(storyId);
+    const planSnapshots = await this.storyRepository.listPlanSnapshots(storyId);
     const chapters = await this.storyRepository.getChapters(storyId);
 
     return {
@@ -94,6 +103,7 @@ export class GetStoryStatusUseCase {
             chapters: [...plan.chapters],
           }
         : undefined,
+      planSnapshots: planSnapshots.map((snapshot) => snapshot.toProps()),
       chapters: chapters.map((chapter) => ({
         index: chapter.index,
         title: chapter.title,

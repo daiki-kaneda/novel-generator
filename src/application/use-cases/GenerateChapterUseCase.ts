@@ -1,7 +1,7 @@
 import { StoryRepository } from '../ports/StoryRepository';
 import { ChapterContentStorage } from '../ports/ChapterContentStorage';
 import { NovelTextGenerator } from '../ports/NovelTextGenerator';
-import { Plan } from '../../domain/entities/Plan';
+import { Plan, PlanSnapshot } from '../../domain/entities/Plan';
 import { StoryMetadataProps } from '../../domain/entities/StoryMetadata';
 import { StoryLength } from '../../domain/value-objects/StoryLength';
 
@@ -158,15 +158,43 @@ export class GenerateChapterUseCase {
       args.plan.reviseFutureChapters(args.completedChapterIndex, revised.chapters);
       args.plan.replaceCharacters(revised.characters);
       await this.storyRepository.savePlan(args.storyId, args.plan);
+      await this.savePlanSnapshotSafely(args.storyId, args.plan, args.completedChapterIndex);
     } catch (error) {
       // Plan 改訂の失敗で章生成を失敗させない（既存 Plan を維持して次章へ進む）。
-      // アプリケーション層は DOM lib を持たないため、globalThis 経由でログする。
-      const warn = (globalThis as { console?: { warn?: (...args: unknown[]) => void } }).console
-        ?.warn;
-      warn?.(
+      this.warn(
         `Failed to revise plan after chapter ${args.completedChapterIndex} for story ${args.storyId}:`,
         error,
       );
     }
+  }
+
+  /** スナップショット保存失敗は本文・Plan更新済みの成功を壊さない。 */
+  private async savePlanSnapshotSafely(
+    storyId: string,
+    plan: Plan,
+    completedChapterIndex: number,
+  ): Promise<void> {
+    try {
+      await this.storyRepository.savePlanSnapshot(
+        storyId,
+        PlanSnapshot.create({
+          afterChapterIndex: completedChapterIndex,
+          trigger: 'chapter_revision',
+          plan: plan.toProps(),
+        }),
+      );
+    } catch (error) {
+      this.warn(
+        `Failed to save plan snapshot after chapter ${completedChapterIndex} for story ${storyId}:`,
+        error,
+      );
+    }
+  }
+
+  private warn(message: string, error: unknown): void {
+    // アプリケーション層は DOM lib を持たないため、globalThis 経由でログする。
+    const warn = (globalThis as { console?: { warn?: (...args: unknown[]) => void } }).console
+      ?.warn;
+    warn?.(message, error);
   }
 }

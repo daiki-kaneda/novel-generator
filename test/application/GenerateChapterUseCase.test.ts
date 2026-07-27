@@ -282,6 +282,13 @@ describe('GenerateChapterUseCase', () => {
     expect(plan.characters).toHaveLength(2);
     expect(plan.characters[0].goals).toContain('王国を救う');
     expect(plan.characters[1].name).toBe('Mentor');
+
+    const snapshots = await repo.listPlanSnapshots(storyId);
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].afterChapterIndex).toBe(1);
+    expect(snapshots[0].trigger).toBe('chapter_revision');
+    expect(snapshots[0].plan.characters).toHaveLength(2);
+    expect(snapshots[0].plan.chapters[1].title).toBe('Revised Chapter 2');
   });
 
   it('does not revise the plan after the final chapter', async () => {
@@ -371,6 +378,7 @@ describe('GenerateChapterUseCase', () => {
     expect(plan.chapters).toEqual(originalChapters);
     expect(plan.characters).toEqual(SAMPLE_PLAN_CHARACTERS);
     expect(warnSpy).toHaveBeenCalled();
+    await expect(repo.listPlanSnapshots(storyId)).resolves.toEqual([]);
 
     warnSpy.mockRestore();
   });

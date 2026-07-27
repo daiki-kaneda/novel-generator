@@ -15,6 +15,75 @@ export interface PlanProps {
   revisionHistory: string[];
 }
 
+/** Plan 変遷記録のきっかけ。 */
+export type PlanSnapshotTrigger = 'initial' | 'chapter_revision';
+
+/**
+ * 動的改訂前後の Plan 状態を残すデバッグ用スナップショット。
+ * afterChapterIndex=0 は初期 Plan、1以上は当該章完了後の改訂結果。
+ */
+export interface PlanSnapshotProps {
+  afterChapterIndex: number;
+  trigger: PlanSnapshotTrigger;
+  recordedAt: string;
+  plan: PlanProps;
+}
+
+export class PlanSnapshot {
+  private constructor(private readonly props: PlanSnapshotProps) {}
+
+  static create(props: Omit<PlanSnapshotProps, 'recordedAt'> & { recordedAt?: string }): PlanSnapshot {
+    if (props.afterChapterIndex < 0) {
+      throw new ValidationError('PlanSnapshot afterChapterIndex must be >= 0');
+    }
+    return new PlanSnapshot({
+      afterChapterIndex: props.afterChapterIndex,
+      trigger: props.trigger,
+      recordedAt: props.recordedAt ?? new Date().toISOString(),
+      plan: {
+        ...props.plan,
+        characters: props.plan.characters.map((c) => ({ ...c })),
+        chapters: [...props.plan.chapters],
+        revisionHistory: [...(props.plan.revisionHistory ?? [])],
+      },
+    });
+  }
+
+  static restore(props: PlanSnapshotProps): PlanSnapshot {
+    return PlanSnapshot.create(props);
+  }
+
+  get afterChapterIndex(): number {
+    return this.props.afterChapterIndex;
+  }
+
+  get trigger(): PlanSnapshotTrigger {
+    return this.props.trigger;
+  }
+
+  get recordedAt(): string {
+    return this.props.recordedAt;
+  }
+
+  get plan(): PlanProps {
+    return {
+      ...this.props.plan,
+      characters: this.props.plan.characters.map((c) => ({ ...c })),
+      chapters: [...this.props.plan.chapters],
+      revisionHistory: [...this.props.plan.revisionHistory],
+    };
+  }
+
+  toProps(): PlanSnapshotProps {
+    return {
+      afterChapterIndex: this.props.afterChapterIndex,
+      trigger: this.props.trigger,
+      recordedAt: this.props.recordedAt,
+      plan: this.plan,
+    };
+  }
+}
+
 /**
  * 承認対象となる物語のプラン（概要・テーマ・登場人物・章構成）。
  * 章生成中は未来章のアウトラインと characters が動的に改訂される。

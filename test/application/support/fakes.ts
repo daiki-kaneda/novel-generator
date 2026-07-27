@@ -15,7 +15,7 @@ import { NotificationSender } from '../../../src/application/ports/NotificationS
 import { RequestQueue } from '../../../src/application/ports/RequestQueue';
 import { Story } from '../../../src/domain/entities/Story';
 import { CharacterProfile, StoryMetadata } from '../../../src/domain/entities/StoryMetadata';
-import { Plan } from '../../../src/domain/entities/Plan';
+import { Plan, PlanSnapshot } from '../../../src/domain/entities/Plan';
 import { Chapter } from '../../../src/domain/entities/Chapter';
 import { NotFoundError } from '../../../src/domain/errors/DomainErrors';
 import { ApprovalDecision } from '../../../src/domain/value-objects/ApprovalDecision';
@@ -42,6 +42,7 @@ export class FakeStoryRepository implements StoryRepository {
   private readonly stories = new Map<string, Story>();
   private readonly metadataByStory = new Map<string, StoryMetadata>();
   private readonly plans = new Map<string, Plan>();
+  private readonly planSnapshots = new Map<string, Map<number, PlanSnapshot>>();
   private readonly chapters = new Map<string, Map<number, Chapter>>();
 
   async createStory(story: Story): Promise<void> {
@@ -90,6 +91,26 @@ export class FakeStoryRepository implements StoryRepository {
 
   async findPlan(storyId: string): Promise<Plan | null> {
     return this.plans.get(storyId) ?? null;
+  }
+
+  async savePlanSnapshot(storyId: string, snapshot: PlanSnapshot): Promise<void> {
+    const byIndex = this.planSnapshots.get(storyId) ?? new Map<number, PlanSnapshot>();
+    byIndex.set(snapshot.afterChapterIndex, PlanSnapshot.restore(snapshot.toProps()));
+    this.planSnapshots.set(storyId, byIndex);
+  }
+
+  async listPlanSnapshots(storyId: string): Promise<PlanSnapshot[]> {
+    const byIndex = this.planSnapshots.get(storyId);
+    if (!byIndex) {
+      return [];
+    }
+    return Array.from(byIndex.values())
+      .sort((a, b) => a.afterChapterIndex - b.afterChapterIndex)
+      .map((snapshot) => PlanSnapshot.restore(snapshot.toProps()));
+  }
+
+  async clearPlanSnapshots(storyId: string): Promise<void> {
+    this.planSnapshots.delete(storyId);
   }
 
   async initializeChapters(storyId: string, chapters: Chapter[]): Promise<void> {
