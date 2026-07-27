@@ -19,9 +19,18 @@ export const handler = async (
       expectedStage: 'final',
       approved,
       feedback: body.feedback,
+      rewriteFromChapterIndex:
+        body.rewriteFromChapterIndex !== undefined
+          ? Number(body.rewriteFromChapterIndex)
+          : undefined,
     });
 
-    return jsonResponse(200, { storyId, stage: 'final', approved });
+    return jsonResponse(200, {
+      storyId,
+      stage: 'final',
+      approved,
+      rewriteFromChapterIndex: body.rewriteFromChapterIndex,
+    });
   } catch (error) {
     return errorResponse(error);
   }

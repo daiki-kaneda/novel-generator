@@ -17,6 +17,7 @@ export class StepFunctionsApprovalGateway implements ApprovalGateway {
         output: JSON.stringify({
           approved: decision.approved,
           feedback: decision.feedback,
+          rewriteFromChapterIndex: decision.rewriteFromChapterIndex,
         }),
       }),
     );

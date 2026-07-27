@@ -74,6 +74,24 @@ describe('DecideApprovalUseCase', () => {
 
     expect(gateway.sentDecisions[0].decision.approved).toBe(false);
     expect(gateway.sentDecisions[0].decision.feedback).toBe('Please change the ending');
+    expect(gateway.sentDecisions[0].decision.rewriteFromChapterIndex).toBe(1);
+  });
+
+  it('passes rewriteFromChapterIndex on final rejection when provided', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'final');
+    const useCase = new DecideApprovalUseCase(repo, gateway);
+
+    await useCase.execute({
+      storyId: story.storyId,
+      expectedStage: 'final',
+      approved: false,
+      feedback: 'Rewrite from chapter 3',
+      rewriteFromChapterIndex: 3,
+    });
+
+    expect(gateway.sentDecisions[0].decision.rewriteFromChapterIndex).toBe(3);
   });
 
   it('throws a ValidationError when the story is not awaiting the expected stage', async () => {

@@ -1,7 +1,9 @@
 import { Plan, PlanSnapshot } from '../../domain/entities/Plan';
 import { Chapter } from '../../domain/entities/Chapter';
+import { WorldEntity, WorldStateSnapshot } from '../../domain/entities/WorldState';
 import { StoryRepository } from '../ports/StoryRepository';
 import { NovelTextGenerator } from '../ports/NovelTextGenerator';
+import { WorldStateRepository } from '../ports/WorldStateRepository';
 
 export interface GeneratePlanInput {
   storyId: string;
@@ -27,6 +29,7 @@ export class GeneratePlanUseCase {
   constructor(
     private readonly storyRepository: StoryRepository,
     private readonly novelTextGenerator: NovelTextGenerator,
+    private readonly worldStateRepository: WorldStateRepository,
   ) {}
 
   async execute(input: GeneratePlanInput): Promise<GeneratePlanOutput> {
@@ -63,6 +66,8 @@ export class GeneratePlanUseCase {
           ? generated.characters
           : metadata.characters.map((c) => ({ ...c })),
       chapters: generated.chapters,
+      roughBeats: generated.roughBeats,
+      forbiddenDevelopments: previousPlan ? [...previousPlan.forbiddenDevelopments] : [],
     });
 
     for (const pastFeedback of previousPlan?.revisionHistory ?? []) {
@@ -78,7 +83,7 @@ export class GeneratePlanUseCase {
       plan.chapters.map((outline) => Chapter.fromOutline(outline)),
     );
 
-    // Plan 再生成時は旧変遷を消し、初期スナップショットだけを残す。
+    // Plan 再生成時は旧変遷と TKG を消し、初期スナップショットだけを残す。
     await this.storyRepository.clearPlanSnapshots(input.storyId);
     await this.storyRepository.savePlanSnapshot(
       input.storyId,
@@ -86,6 +91,29 @@ export class GeneratePlanUseCase {
         afterChapterIndex: 0,
         trigger: 'initial',
         plan: plan.toProps(),
+      }),
+    );
+    await this.worldStateRepository.clearWorldState(input.storyId);
+    const seedEntities: WorldEntity[] = plan.characters.map((character, index) => ({
+      entityId: `char-${index + 1}-${character.name.replace(/\s+/g, '-').toLowerCase()}`,
+      name: character.name,
+      kind: 'character' as const,
+      attributes: [
+        character.role,
+        character.personality,
+        character.appearance ?? '',
+      ]
+        .filter(Boolean)
+        .join(' / '),
+      updatedAtChapter: 0,
+    }));
+    await this.worldStateRepository.upsertEntities(input.storyId, seedEntities);
+    await this.worldStateRepository.saveSnapshot(
+      input.storyId,
+      WorldStateSnapshot.create({
+        afterChapterIndex: 0,
+        entities: seedEntities,
+        facts: [],
       }),
     );
 

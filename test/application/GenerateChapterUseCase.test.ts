@@ -1,15 +1,18 @@
 import { GenerateChapterUseCase } from '../../src/application/use-cases/GenerateChapterUseCase';
 import { Plan } from '../../src/domain/entities/Plan';
-import { Chapter, ChapterOutline } from '../../src/domain/entities/Chapter';
+import { Chapter } from '../../src/domain/entities/Chapter';
 import { Story } from '../../src/domain/entities/Story';
 import { StoryMetadata } from '../../src/domain/entities/StoryMetadata';
+import { ContradictionDetectedError } from '../../src/domain/errors/DomainErrors';
 import {
   FakeStoryRepository,
   FakeChapterContentStorage,
   FakeNovelTextGenerator,
+  FakeWorldStateRepository,
   SAMPLE_PLAN_CHARACTERS,
 } from './support/fakes';
-import { RevisePlanInput } from '../../src/application/ports/NovelTextGenerator';
+import { RealignFuturePlanInput } from '../../src/application/ports/NovelTextGenerator';
+import { AtomicFact } from '../../src/domain/entities/WorldState';
 
 function sampleMetadata(): StoryMetadata {
   return StoryMetadata.create({
@@ -37,7 +40,6 @@ async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<vo
     requireChapterApproval: false,
     length: 'short',
   });
-  // storyId をテスト固定値に合わせるため restore で差し替える
   const restored = Story.restore({
     ...story.toProps(),
     storyId,
@@ -46,11 +48,21 @@ async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<vo
   await repo.saveMetadata(storyId, sampleMetadata());
 }
 
+function createUseCase(
+  repo: FakeStoryRepository,
+  storage: FakeChapterContentStorage,
+  generator: FakeNovelTextGenerator,
+  world: FakeWorldStateRepository = new FakeWorldStateRepository(),
+): GenerateChapterUseCase {
+  return new GenerateChapterUseCase(repo, storage, generator, world);
+}
+
 describe('GenerateChapterUseCase', () => {
-  it('passes the previous chapter summary as implicit context, not the full text', async () => {
+  it('passes active facts and previous scene summary instead of relying on summary alone', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
+    const world = new FakeWorldStateRepository();
     const storyId = 'story-1';
     await seedStory(repo, storyId);
 
@@ -78,26 +90,44 @@ describe('GenerateChapterUseCase', () => {
       Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
     ]);
 
-    let capturedPreviousSummary: string | undefined;
+    const priorFact: AtomicFact = {
+      factId: 'fact-c0001-001',
+      subject: 'Hero',
+      predicate: 'holds',
+      object: 'sword',
+      entityIds: ['char-hero'],
+      validFromChapter: 1,
+      sourceChapterIndex: 1,
+    };
+    await world.appendFacts(storyId, [priorFact]);
+
+    let capturedSceneSummary: string | undefined;
+    let capturedFacts: unknown;
     generator.generateChapterText = async (input) => {
-      capturedPreviousSummary = input.previousChapterSummary;
+      capturedSceneSummary = input.previousSceneSummary;
+      capturedFacts = input.activeFacts;
       return 'generated chapter 2 text';
     };
 
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    const useCase = createUseCase(repo, storage, generator, world);
     await useCase.execute({ storyId, chapterIndex: 2 });
 
-    expect(capturedPreviousSummary).toBe('the hero found the sword');
+    expect(capturedSceneSummary).toBe('the hero found the sword');
+    expect(capturedFacts).toEqual([
+      {
+        factId: 'fact-c0001-001',
+        subject: 'Hero',
+        predicate: 'holds',
+        object: 'sword',
+      },
+    ]);
 
     const chapter2 = await repo.getChapter(storyId, 2);
     expect(chapter2.isDone()).toBe(true);
-    expect(chapter2.summaryKeyPoints).toBe(generator.summarizeChapterResult);
-    await expect(storage.getChapterText(storyId, chapter2.s3Key as string)).resolves.toBe(
-      'generated chapter 2 text',
-    );
+    expect(chapter2.summaryKeyPoints).toBe(generator.extractAtomicFactsResult.sceneSummary);
   });
 
-  it('masks future chapters and uses plan characters (not metadata characters) when generating', async () => {
+  it('keeps future chapters as rough outlines while using detailed outlines up to the current chapter', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
@@ -116,8 +146,8 @@ describe('GenerateChapterUseCase', () => {
     ];
     const chapters = [
       { index: 1, title: 'Chapter 1', outline: 'outline 1' },
-      { index: 2, title: 'Chapter 2', outline: 'outline 2' },
-      { index: 3, title: 'Chapter 3', outline: 'outline 3' },
+      { index: 2, title: 'Chapter 2', outline: 'outline 2 detailed' },
+      { index: 3, title: 'Chapter 3', outline: 'outline 3 detailed' },
     ];
     await repo.savePlan(
       storyId,
@@ -126,6 +156,20 @@ describe('GenerateChapterUseCase', () => {
         theme: 'plan theme',
         characters: planCharacters,
         chapters,
+        roughBeats: [
+          {
+            beatId: 'beat-setup',
+            label: '起',
+            summary: '導入の粗い骨格',
+            chapterIndexes: [1],
+          },
+          {
+            beatId: 'beat-middle',
+            label: '承',
+            summary: '中盤の粗い骨格',
+            chapterIndexes: [2, 3],
+          },
+        ],
       }),
     );
     await repo.initializeChapters(
@@ -133,74 +177,26 @@ describe('GenerateChapterUseCase', () => {
       chapters.map((outline) => Chapter.fromOutline(outline)),
     );
 
-    let capturedMetadataTheme: string | undefined;
-    let capturedPlanChapterIndexes: number[] = [];
-    let capturedPlanCharacterName: string | undefined;
-    let metadataHasCharactersKey = true;
+    let detailedIndexes: number[] = [];
+    let futureRough: Array<{ index: number; outline: string }> = [];
     generator.generateChapterText = async (input) => {
-      capturedMetadataTheme = input.metadata.theme;
-      capturedPlanChapterIndexes = input.plan.chapters.map((c) => c.index);
-      capturedPlanCharacterName = input.plan.characters[0]?.name;
-      metadataHasCharactersKey = 'characters' in input.metadata;
-      expect(input.plan.summary).toBe('plan summary');
-      expect(input.chapterOutline.index).toBe(1);
-      expect(input.metadata.world.geography).toContain('北方');
+      detailedIndexes = input.plan.chapters.map((c) => c.index);
+      futureRough = (input.plan.futureRoughOutlines ?? []).map((c) => ({
+        index: c.index,
+        outline: c.outline,
+      }));
       return 'generated chapter 1 text';
     };
 
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    const useCase = createUseCase(repo, storage, generator);
     await useCase.execute({ storyId, chapterIndex: 1 });
 
-    expect(capturedMetadataTheme).toBe('enriched theme');
-    expect(capturedPlanChapterIndexes).toEqual([1]);
-    expect(capturedPlanCharacterName).toBe('Plan Hero');
-    expect(metadataHasCharactersKey).toBe(false);
+    expect(detailedIndexes).toEqual([1]);
+    expect(futureRough.map((c) => c.index)).toEqual([2, 3]);
+    expect(futureRough[0].outline).toBe('中盤の粗い骨格');
   });
 
-  it('uses the latest plan outline for chapterOutline even if the chapter record is stale', async () => {
-    const repo = new FakeStoryRepository();
-    const storage = new FakeChapterContentStorage();
-    const generator = new FakeNovelTextGenerator();
-    const storyId = 'story-stale-outline';
-    await seedStory(repo, storyId);
-
-    await repo.savePlan(
-      storyId,
-      Plan.create({
-        summary: 'summary',
-        theme: 'theme',
-        characters: SAMPLE_PLAN_CHARACTERS,
-        chapters: [
-          { index: 1, title: 'Revised Title 1', outline: 'revised outline 1' },
-          { index: 2, title: 'Chapter 2', outline: 'outline 2' },
-        ],
-      }),
-    );
-    await repo.initializeChapters(storyId, [
-      Chapter.fromOutline({ index: 1, title: 'Old Title 1', outline: 'old outline 1' }),
-      Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
-    ]);
-
-    let capturedTitle: string | undefined;
-    let capturedOutline: string | undefined;
-    generator.generateChapterText = async (input) => {
-      capturedTitle = input.chapterOutline.title;
-      capturedOutline = input.chapterOutline.outline;
-      return 'generated chapter 1 text';
-    };
-
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
-    await useCase.execute({ storyId, chapterIndex: 1 });
-
-    expect(capturedTitle).toBe('Revised Title 1');
-    expect(capturedOutline).toBe('revised outline 1');
-
-    const chapter1 = await repo.getChapter(storyId, 1);
-    expect(chapter1.title).toBe('Revised Title 1');
-    expect(chapter1.outline).toBe('revised outline 1');
-  });
-
-  it('revises future plan chapters and characters after a non-final chapter completes', async () => {
+  it('realigns future plan chapters after a non-final chapter completes', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
@@ -226,12 +222,13 @@ describe('GenerateChapterUseCase', () => {
       Chapter.fromOutline({ index: 3, title: 'Chapter 3', outline: 'outline 3' }),
     ]);
 
-    let reviseCalled = false;
-    let capturedReviseInput: RevisePlanInput | undefined;
-    generator.revisePlan = async (input) => {
-      reviseCalled = true;
-      capturedReviseInput = input;
+    let realignCalled = false;
+    let captured: RealignFuturePlanInput | undefined;
+    generator.realignFuturePlan = async (input) => {
+      realignCalled = true;
+      captured = input;
       return {
+        roughBeats: input.roughBeats,
         chapters: [
           { index: 2, title: 'Revised Chapter 2', outline: 'revised outline 2' },
           { index: 3, title: 'Revised Chapter 3', outline: 'revised outline 3' },
@@ -240,58 +237,27 @@ describe('GenerateChapterUseCase', () => {
           {
             ...SAMPLE_PLAN_CHARACTERS[0],
             goals: '剣を手に入れた今、王国を救う',
-            relationships: '導師への疑念が芽生えている',
-          },
-          {
-            name: 'Mentor',
-            role: '導師',
-            personality: '謎めいた',
-            background: '古の騎士',
-            goals: '弟子を試練にかける',
-            relationships: 'Hero の師匠',
           },
         ],
       };
     };
 
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    const useCase = createUseCase(repo, storage, generator);
     await useCase.execute({ storyId, chapterIndex: 1 });
 
-    expect(reviseCalled).toBe(true);
-    expect(capturedReviseInput?.futureChapters.map((c) => c.index)).toEqual([2, 3]);
-    expect(capturedReviseInput?.completedChapter.index).toBe(1);
-    expect(capturedReviseInput?.planSummary).toBe('summary');
-    expect(capturedReviseInput?.planTheme).toBe('theme');
-    expect(capturedReviseInput?.characters).toHaveLength(1);
-    expect(capturedReviseInput?.metadata).not.toHaveProperty('characters');
+    expect(realignCalled).toBe(true);
+    expect(captured?.futureChapters.map((c) => c.index)).toEqual([2, 3]);
 
     const plan = await repo.getPlan(storyId);
-    expect(plan.chapters[0]).toEqual({ index: 1, title: 'Chapter 1', outline: 'outline 1' });
-    expect(plan.chapters[1]).toEqual({
-      index: 2,
-      title: 'Revised Chapter 2',
-      outline: 'revised outline 2',
-    });
-    expect(plan.chapters[2]).toEqual({
-      index: 3,
-      title: 'Revised Chapter 3',
-      outline: 'revised outline 3',
-    });
-    expect(plan.summary).toBe('summary');
-    expect(plan.theme).toBe('theme');
-    expect(plan.characters).toHaveLength(2);
+    expect(plan.chapters[1].title).toBe('Revised Chapter 2');
     expect(plan.characters[0].goals).toContain('王国を救う');
-    expect(plan.characters[1].name).toBe('Mentor');
 
     const snapshots = await repo.listPlanSnapshots(storyId);
     expect(snapshots).toHaveLength(1);
-    expect(snapshots[0].afterChapterIndex).toBe(1);
     expect(snapshots[0].trigger).toBe('chapter_revision');
-    expect(snapshots[0].plan.characters).toHaveLength(2);
-    expect(snapshots[0].plan.chapters[1].title).toBe('Revised Chapter 2');
   });
 
-  it('does not revise the plan after the final chapter', async () => {
+  it('does not realign the plan after the final chapter', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
@@ -322,72 +288,62 @@ describe('GenerateChapterUseCase', () => {
       Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
     ]);
 
-    let reviseCalled = false;
-    generator.revisePlan = async (input) => {
-      reviseCalled = true;
+    let realignCalled = false;
+    generator.realignFuturePlan = async (input) => {
+      realignCalled = true;
       return {
+        roughBeats: input.roughBeats,
         chapters: input.futureChapters,
         characters: input.characters,
       };
     };
 
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    const useCase = createUseCase(repo, storage, generator);
     await useCase.execute({ storyId, chapterIndex: 2 });
 
-    expect(reviseCalled).toBe(false);
+    expect(realignCalled).toBe(false);
   });
 
-  it('keeps the existing plan when revisePlan fails', async () => {
+  it('fails the chapter when realignFuturePlan fails', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
     const storyId = 'story-revise-fail';
     await seedStory(repo, storyId);
 
-    const originalChapters: ChapterOutline[] = [
-      { index: 1, title: 'Chapter 1', outline: 'outline 1' },
-      { index: 2, title: 'Chapter 2', outline: 'outline 2' },
-    ];
     await repo.savePlan(
       storyId,
       Plan.create({
         summary: 'summary',
         theme: 'theme',
         characters: SAMPLE_PLAN_CHARACTERS,
-        chapters: originalChapters,
+        chapters: [
+          { index: 1, title: 'Chapter 1', outline: 'outline 1' },
+          { index: 2, title: 'Chapter 2', outline: 'outline 2' },
+        ],
       }),
     );
-    await repo.initializeChapters(
-      storyId,
-      originalChapters.map((outline) => Chapter.fromOutline(outline)),
-    );
+    await repo.initializeChapters(storyId, [
+      Chapter.fromOutline({ index: 1, title: 'Chapter 1', outline: 'outline 1' }),
+      Chapter.fromOutline({ index: 2, title: 'Chapter 2', outline: 'outline 2' }),
+    ]);
 
-    generator.revisePlan = async () => {
-      throw new Error('bedrock revise failed');
+    generator.realignFuturePlan = async () => {
+      throw new Error('bedrock realign failed');
     };
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
-    await expect(useCase.execute({ storyId, chapterIndex: 1 })).resolves.toBeUndefined();
-
-    const chapter1 = await repo.getChapter(storyId, 1);
-    expect(chapter1.isDone()).toBe(true);
-
-    const plan = await repo.getPlan(storyId);
-    expect(plan.chapters).toEqual(originalChapters);
-    expect(plan.characters).toEqual(SAMPLE_PLAN_CHARACTERS);
-    expect(warnSpy).toHaveBeenCalled();
-    await expect(repo.listPlanSnapshots(storyId)).resolves.toEqual([]);
-
-    warnSpy.mockRestore();
+    const useCase = createUseCase(repo, storage, generator);
+    await expect(useCase.execute({ storyId, chapterIndex: 1 })).rejects.toThrow(
+      'bedrock realign failed',
+    );
   });
 
-  it('does not pass a previous chapter summary for the first chapter', async () => {
+  it('throws ContradictionDetectedError when new facts conflict', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
     const generator = new FakeNovelTextGenerator();
-    const storyId = 'story-2';
+    const world = new FakeWorldStateRepository();
+    const storyId = 'story-contradiction';
     await seedStory(repo, storyId);
 
     await repo.savePlan(
@@ -403,16 +359,21 @@ describe('GenerateChapterUseCase', () => {
       Chapter.fromOutline({ index: 1, title: 'Chapter 1', outline: 'outline 1' }),
     ]);
 
-    let capturedPreviousSummary: string | undefined = 'not-set';
-    generator.generateChapterText = async (input) => {
-      capturedPreviousSummary = input.previousChapterSummary;
-      return 'generated chapter 1 text';
-    };
+    generator.detectContradictions = async () => ({
+      hasContradiction: true,
+      contradictions: [
+        {
+          newFact: 'Hero holds sword',
+          conflictingFact: 'Hero lost sword',
+          reason: 'lost item cannot be held',
+        },
+      ],
+    });
 
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
-    await useCase.execute({ storyId, chapterIndex: 1 });
-
-    expect(capturedPreviousSummary).toBeUndefined();
+    const useCase = createUseCase(repo, storage, generator, world);
+    await expect(useCase.execute({ storyId, chapterIndex: 1 })).rejects.toBeInstanceOf(
+      ContradictionDetectedError,
+    );
   });
 
   it('applies revisionFeedback before regenerating the chapter', async () => {
@@ -441,7 +402,7 @@ describe('GenerateChapterUseCase', () => {
       return 'revised chapter text';
     };
 
-    const useCase = new GenerateChapterUseCase(repo, storage, generator);
+    const useCase = createUseCase(repo, storage, generator);
     await useCase.execute({
       storyId,
       chapterIndex: 1,

@@ -1,4 +1,9 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ChapterContentStorage } from '../../application/ports/ChapterContentStorage';
 
@@ -25,6 +30,15 @@ export class S3ChapterContentStorage implements ChapterContentStorage {
       throw new Error(`Object body is empty for key ${s3Key}`);
     }
     return await result.Body.transformToString('utf-8');
+  }
+
+  async deleteChapterText(_storyId: string, s3Key: string): Promise<void> {
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucketName,
+        Key: s3Key,
+      }),
+    );
   }
 
   async saveFinalText(storyId: string, text: string): Promise<string> {

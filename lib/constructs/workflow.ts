@@ -24,11 +24,7 @@ export interface NovelWorkflowProps {
 
 /**
  * 小説生成ワークフローの中核となるStep Functions（Standard）ステートマシンと、
- * それが呼び出す各Lambda関数（メタデータ生成・プラン生成・承認待ち・章生成・仕上げ）を定義する。
- *
- * ワークフロー全体を通じて `storyId` をトップレベルに保持し、各タスクの結果は
- * `resultPath` で個別のキーにマージする（Lambdaの戻り値で `$` 全体を上書きしない）ことで、
- * 承認/拒否ループをシンプルなJSONPathの組み合わせで表現している。
+ * それが呼び出す各Lambda関数を定義する。
  */
 export class NovelWorkflow extends Construct {
   readonly stateMachine: sfn.StateMachine;
@@ -39,7 +35,6 @@ export class NovelWorkflow extends Construct {
     const stack = Stack.of(this);
     const bedrockInvokeStatement = new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      // 推論プロファイル ARN + ルーティング先 foundation-model ARN（JP は東京・大阪）
       resources: [
         `arn:${stack.partition}:bedrock:${stack.region}:${stack.account}:inference-profile/${props.bedrockModelId}`,
         ...props.bedrockFoundationModelRegions.map(
@@ -68,7 +63,7 @@ export class NovelWorkflow extends Construct {
     const generatePlanFn = createHandlerFunction(this, 'GeneratePlanFunction', {
       entry: 'generatePlan.ts',
       description: 'プラン（概要・テーマ・登場人物・章構成）を生成/再生成する',
-      timeout: Duration.seconds(90),
+      timeout: Duration.seconds(120),
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
         BEDROCK_MODEL_ID: props.bedrockModelId,
@@ -88,8 +83,8 @@ export class NovelWorkflow extends Construct {
 
     const generateChapterFn = createHandlerFunction(this, 'GenerateChapterFunction', {
       entry: 'generateChapter.ts',
-      description: '1章分の本文を生成し、次章用の要約を作成する',
-      timeout: Duration.minutes(10),
+      description: '1章分の本文を生成し、TKG更新と未来アウトライン再整合を行う',
+      timeout: Duration.minutes(15),
       memorySize: 1024,
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
@@ -100,6 +95,30 @@ export class NovelWorkflow extends Construct {
     props.storyTable.grantReadWriteData(generateChapterFn);
     props.contentBucket.grantReadWrite(generateChapterFn);
     generateChapterFn.addToRolePolicy(bedrockInvokeStatement);
+
+    const compensateChapterFn = createHandlerFunction(this, 'CompensateChapterFailureFunction', {
+      entry: 'compensateChapterFailure.ts',
+      description: '章生成失敗時にS3/TKG/章状態を補償ロールバックする',
+      timeout: Duration.seconds(60),
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+        CONTENT_BUCKET_NAME: props.contentBucket.bucketName,
+      },
+    });
+    props.storyTable.grantReadWriteData(compensateChapterFn);
+    props.contentBucket.grantReadWrite(compensateChapterFn);
+
+    const preparePartialRewriteFn = createHandlerFunction(this, 'PreparePartialRewriteFunction', {
+      entry: 'preparePartialRewrite.ts',
+      description: '最終拒否時に指定章以降のみ再生成できるよう状態を巻き戻す',
+      timeout: Duration.seconds(60),
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+        CONTENT_BUCKET_NAME: props.contentBucket.bucketName,
+      },
+    });
+    props.storyTable.grantReadWriteData(preparePartialRewriteFn);
+    props.contentBucket.grantReadWrite(preparePartialRewriteFn);
 
     const finalizeNovelFn = createHandlerFunction(this, 'FinalizeNovelFunction', {
       entry: 'finalizeNovel.ts',
@@ -121,6 +140,8 @@ export class NovelWorkflow extends Construct {
       generatePlanFn,
       requestApprovalFn,
       generateChapterFn,
+      compensateChapterFn,
+      preparePartialRewriteFn,
       finalizeNovelFn,
     });
   }
@@ -130,6 +151,8 @@ export class NovelWorkflow extends Construct {
     generatePlanFn: NodejsFunction;
     requestApprovalFn: NodejsFunction;
     generateChapterFn: NodejsFunction;
+    compensateChapterFn: NodejsFunction;
+    preparePartialRewriteFn: NodejsFunction;
     finalizeNovelFn: NodejsFunction;
   }): sfn.StateMachine {
     const {
@@ -137,10 +160,11 @@ export class NovelWorkflow extends Construct {
       generatePlanFn,
       requestApprovalFn,
       generateChapterFn,
+      compensateChapterFn,
+      preparePartialRewriteFn,
       finalizeNovelFn,
     } = fns;
 
-    /** 承認待ちタスク（コールバックトークン保存）を共通生成する。 */
     const requestApprovalTask = (
       id: string,
       stage: 'metadata' | 'plan' | 'chapter' | 'final',
@@ -201,13 +225,7 @@ export class NovelWorkflow extends Construct {
       },
     });
 
-    const mergeFinalFeedback = new sfn.Pass(this, 'MergeFinalFeedback', {
-      comment: '最終承認拒否はPlanフィードバックとして扱い、全章を再生成する',
-      parameters: {
-        'storyId.$': '$.storyId',
-        'feedback.$': '$.finalDecision.feedback',
-      },
-    });
+    const chapterDone = new sfn.Pass(this, 'ChapterDone');
 
     const generateChapter = new tasks.LambdaInvoke(this, 'GenerateChapter', {
       lambdaFunction: generateChapterFn,
@@ -219,6 +237,61 @@ export class NovelWorkflow extends Construct {
       }),
       resultPath: sfn.JsonPath.DISCARD,
     });
+
+    const compensateChapter = new tasks.LambdaInvoke(this, 'CompensateChapterFailure', {
+      lambdaFunction: compensateChapterFn,
+      payloadResponseOnly: true,
+      payload: sfn.TaskInput.fromObject({
+        storyId: sfn.JsonPath.stringAt('$.storyId'),
+        chapterIndex: sfn.JsonPath.numberAt('$.chapterIndex'),
+        error: sfn.JsonPath.objectAt('$.error'),
+      }),
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+
+    const incrementChapterAttempt = new sfn.Pass(this, 'IncrementChapterAttempt', {
+      parameters: {
+        'storyId.$': '$.storyId',
+        'chapterIndex.$': '$.chapterIndex',
+        'requireChapterApproval.$': '$.requireChapterApproval',
+        revisionFeedback: '',
+        'attempt.$': 'States.MathAdd($.attempt, 1)',
+      },
+    });
+
+    const requestChapterRecovery = requestApprovalTask(
+      'RequestChapterRecovery',
+      'chapter',
+      '$.chapterDecision',
+      { includeChapterIndex: true },
+    );
+
+    const prepareRecoveryRevision = new sfn.Pass(this, 'PrepareRecoveryRevision', {
+      parameters: {
+        'storyId.$': '$.storyId',
+        'chapterIndex.$': '$.chapterIndex',
+        'requireChapterApproval.$': '$.requireChapterApproval',
+        'revisionFeedback.$': '$.chapterDecision.feedback',
+        attempt: 0,
+      },
+    });
+
+    const recoveryApprovedChoice = new sfn.Choice(this, 'RecoveryApproved?')
+      .when(sfn.Condition.booleanEquals('$.chapterDecision.approved', true), chapterDone)
+      .otherwise(prepareRecoveryRevision);
+
+    const retryOrRecover = new sfn.Choice(this, 'RetryChapterOrRecover?')
+      .when(sfn.Condition.numberLessThan('$.attempt', 2), generateChapter)
+      .otherwise(requestChapterRecovery);
+
+    generateChapter.addCatch(compensateChapter, {
+      errors: ['States.ALL'],
+      resultPath: '$.error',
+    });
+    compensateChapter.next(incrementChapterAttempt);
+    incrementChapterAttempt.next(retryOrRecover);
+    requestChapterRecovery.next(recoveryApprovedChoice);
+    prepareRecoveryRevision.next(generateChapter);
 
     const requestChapterApproval = requestApprovalTask(
       'RequestChapterApproval',
@@ -234,10 +307,9 @@ export class NovelWorkflow extends Construct {
         'chapterIndex.$': '$.chapterIndex',
         'requireChapterApproval.$': '$.requireChapterApproval',
         'revisionFeedback.$': '$.chapterDecision.feedback',
+        attempt: 0,
       },
     });
-
-    const chapterDone = new sfn.Pass(this, 'ChapterDone');
 
     const chapterApprovedChoice = new sfn.Choice(this, 'ChapterApproved?')
       .when(sfn.Condition.booleanEquals('$.chapterDecision.approved', true), chapterDone)
@@ -249,21 +321,100 @@ export class NovelWorkflow extends Construct {
 
     generateChapter.next(chapterApprovalGate);
     requestChapterApproval.next(chapterApprovedChoice);
-    // 拒否時はフィードバックを載せて同じ章の生成に戻る（順番は戻れない）
     prepareChapterRevision.next(generateChapter);
+
+    const chapterItemSelector = {
+      'storyId.$': '$.storyId',
+      'chapterIndex.$': '$$.Map.Item.Value',
+      'requireChapterApproval.$': '$.plan.requireChapterApproval',
+      revisionFeedback: '',
+      attempt: 0,
+    };
 
     const generateChaptersMap = new sfn.Map(this, 'GenerateChapters', {
       itemsPath: '$.plan.chapterIndexes',
       maxConcurrency: 1,
       resultPath: sfn.JsonPath.DISCARD,
+      itemSelector: chapterItemSelector,
+    });
+    generateChaptersMap.itemProcessor(generateChapter);
+
+    const rewriteChaptersMap = new sfn.Map(this, 'RewriteChapters', {
+      itemsPath: '$.rewrite.chapterIndexes',
+      maxConcurrency: 1,
+      resultPath: sfn.JsonPath.DISCARD,
       itemSelector: {
         'storyId.$': '$.storyId',
         'chapterIndex.$': '$$.Map.Item.Value',
-        'requireChapterApproval.$': '$.plan.requireChapterApproval',
-        revisionFeedback: '',
+        'requireChapterApproval.$': '$.rewrite.requireChapterApproval',
+        'revisionFeedback.$': '$.rewrite.revisionFeedback',
+        attempt: 0,
       },
     });
-    generateChaptersMap.itemProcessor(generateChapter);
+    // Map は同じプロセッサ鎖を共有できないため、Rewrite 用に同等の開始点として generateChapter を使う。
+    // CDK では同一 State を複数 Map の processor にできないので、書き換え用の並列鎖を構築する。
+    const rewriteGenerateChapter = new tasks.LambdaInvoke(this, 'RewriteGenerateChapter', {
+      lambdaFunction: generateChapterFn,
+      payloadResponseOnly: true,
+      payload: sfn.TaskInput.fromObject({
+        storyId: sfn.JsonPath.stringAt('$.storyId'),
+        chapterIndex: sfn.JsonPath.numberAt('$.chapterIndex'),
+        revisionFeedback: sfn.JsonPath.stringAt('$.revisionFeedback'),
+      }),
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+    const rewriteCompensate = new tasks.LambdaInvoke(this, 'RewriteCompensateChapterFailure', {
+      lambdaFunction: compensateChapterFn,
+      payloadResponseOnly: true,
+      payload: sfn.TaskInput.fromObject({
+        storyId: sfn.JsonPath.stringAt('$.storyId'),
+        chapterIndex: sfn.JsonPath.numberAt('$.chapterIndex'),
+        error: sfn.JsonPath.objectAt('$.error'),
+      }),
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+    const rewriteIncrement = new sfn.Pass(this, 'RewriteIncrementChapterAttempt', {
+      parameters: {
+        'storyId.$': '$.storyId',
+        'chapterIndex.$': '$.chapterIndex',
+        'requireChapterApproval.$': '$.requireChapterApproval',
+        'revisionFeedback.$': '$.revisionFeedback',
+        'attempt.$': 'States.MathAdd($.attempt, 1)',
+      },
+    });
+    const rewriteChapterDone = new sfn.Pass(this, 'RewriteChapterDone');
+    const rewriteRequestRecovery = requestApprovalTask(
+      'RewriteRequestChapterRecovery',
+      'chapter',
+      '$.chapterDecision',
+      { includeChapterIndex: true },
+    );
+    const rewritePrepareRecovery = new sfn.Pass(this, 'RewritePrepareRecoveryRevision', {
+      parameters: {
+        'storyId.$': '$.storyId',
+        'chapterIndex.$': '$.chapterIndex',
+        'requireChapterApproval.$': '$.requireChapterApproval',
+        'revisionFeedback.$': '$.chapterDecision.feedback',
+        attempt: 0,
+      },
+    });
+    const rewriteRecoveryChoice = new sfn.Choice(this, 'RewriteRecoveryApproved?')
+      .when(sfn.Condition.booleanEquals('$.chapterDecision.approved', true), rewriteChapterDone)
+      .otherwise(rewritePrepareRecovery);
+    const rewriteRetryOrRecover = new sfn.Choice(this, 'RewriteRetryChapterOrRecover?')
+      .when(sfn.Condition.numberLessThan('$.attempt', 2), rewriteGenerateChapter)
+      .otherwise(rewriteRequestRecovery);
+
+    rewriteGenerateChapter.addCatch(rewriteCompensate, {
+      errors: ['States.ALL'],
+      resultPath: '$.error',
+    });
+    rewriteCompensate.next(rewriteIncrement);
+    rewriteIncrement.next(rewriteRetryOrRecover);
+    rewriteRequestRecovery.next(rewriteRecoveryChoice);
+    rewritePrepareRecovery.next(rewriteGenerateChapter);
+    rewriteGenerateChapter.next(rewriteChapterDone);
+    rewriteChaptersMap.itemProcessor(rewriteGenerateChapter);
 
     const requestFinalApproval = requestApprovalTask(
       'RequestFinalApproval',
@@ -279,6 +430,37 @@ export class NovelWorkflow extends Construct {
 
     const succeed = new sfn.Succeed(this, 'NovelCompleted');
     finalize.next(succeed);
+
+    const mergeFinalFeedback = new sfn.Pass(this, 'MergeFinalFeedback', {
+      comment: '最終拒否は指定章以降の部分再生成へ進む（フルリライトしない）',
+      parameters: {
+        'storyId.$': '$.storyId',
+        'feedback.$': '$.finalDecision.feedback',
+        'rewriteFromChapterIndex.$': '$.finalDecision.rewriteFromChapterIndex',
+        'requireChapterApproval.$': '$.plan.requireChapterApproval',
+      },
+    });
+
+    const preparePartialRewrite = new tasks.LambdaInvoke(this, 'PreparePartialRewrite', {
+      lambdaFunction: preparePartialRewriteFn,
+      payloadResponseOnly: true,
+      payload: sfn.TaskInput.fromObject({
+        storyId: sfn.JsonPath.stringAt('$.storyId'),
+        rewriteFromChapterIndex: sfn.JsonPath.numberAt('$.rewriteFromChapterIndex'),
+        feedback: sfn.JsonPath.stringAt('$.feedback'),
+      }),
+      resultPath: '$.rewrite',
+    });
+
+    const afterRewriteKeepContext = new sfn.Pass(this, 'AfterRewriteKeepContext', {
+      parameters: {
+        'storyId.$': '$.storyId',
+        'rewrite.$': '$.rewrite',
+        plan: {
+          'requireChapterApproval.$': '$.rewrite.requireChapterApproval',
+        },
+      },
+    });
 
     const planApprovedChoice = new sfn.Choice(this, 'PlanApproved?')
       .when(sfn.Condition.booleanEquals('$.planDecision.approved', true), generateChaptersMap)
@@ -299,18 +481,21 @@ export class NovelWorkflow extends Construct {
       )
       .otherwise(generatePlan);
 
-    const finalApprovedChoice = new sfn.Choice(this, 'FinalApproved?')
-      .when(sfn.Condition.booleanEquals('$.finalDecision.approved', true), finalize)
-      .otherwise(mergeFinalFeedback);
-
-    // 章承認が無効な場合のみ最終承認を必須にする
     const finalApprovalGate = new sfn.Choice(this, 'RequireFinalApproval?')
       .when(sfn.Condition.booleanEquals('$.plan.requireChapterApproval', false), requestFinalApproval)
       .otherwise(finalize);
 
+    const finalApprovedChoice = new sfn.Choice(this, 'FinalApproved?')
+      .when(sfn.Condition.booleanEquals('$.finalDecision.approved', true), finalize)
+      .otherwise(mergeFinalFeedback);
+
     mergeMetadataFeedback.next(generateMetadata);
     mergePlanFeedback.next(generatePlan);
-    mergeFinalFeedback.next(generatePlan);
+    mergeFinalFeedback.next(preparePartialRewrite);
+    preparePartialRewrite.next(afterRewriteKeepContext);
+    afterRewriteKeepContext.next(rewriteChaptersMap);
+    rewriteChaptersMap.next(finalApprovalGate);
+
     generateChaptersMap.next(finalApprovalGate);
     requestMetadataApproval.next(metadataApprovedChoice);
     requestPlanApproval.next(planApprovedChoice);
@@ -319,7 +504,6 @@ export class NovelWorkflow extends Construct {
     generateMetadata.next(metadataApprovalGate);
     generatePlan.next(planApprovalGate);
 
-    // EventBridge Pipes(SQS)は batchSize=1 でも変換結果を配列で渡すため、先頭要素を取り出す
     const unwrapPipeBatch = new sfn.Pass(this, 'UnwrapPipeBatch', {
       comment: 'Pipeからの [{ storyId }] を { storyId } に展開する',
       inputPath: '$[0]',
@@ -330,7 +514,6 @@ export class NovelWorkflow extends Construct {
     return new sfn.StateMachine(this, 'StateMachine', {
       stateMachineType: sfn.StateMachineType.STANDARD,
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
-      // 章ごとの人間承認が挟まるため、タイムアウトに余裕を持たせる
       timeout: Duration.days(7),
       logs: {
         destination: new logs.LogGroup(this, 'StateMachineLogGroup', {

@@ -7,6 +7,7 @@ import { SESClient } from '@aws-sdk/client-ses';
 import { SQSClient } from '@aws-sdk/client-sqs';
 
 import { DynamoDbStoryRepository } from '../../infrastructure/dynamodb/DynamoDbStoryRepository';
+import { DynamoDbWorldStateRepository } from '../../infrastructure/dynamodb/DynamoDbWorldStateRepository';
 import { S3ChapterContentStorage } from '../../infrastructure/s3/S3ChapterContentStorage';
 import { BedrockNovelTextGenerator } from '../../infrastructure/bedrock/BedrockNovelTextGenerator';
 import { StepFunctionsApprovalGateway } from '../../infrastructure/stepfunctions/StepFunctionsApprovalGateway';
@@ -22,6 +23,8 @@ import { RequestApprovalUseCase } from '../../application/use-cases/RequestAppro
 import { DecideApprovalUseCase } from '../../application/use-cases/DecideApprovalUseCase';
 import { GenerateChapterUseCase } from '../../application/use-cases/GenerateChapterUseCase';
 import { FinalizeNovelUseCase } from '../../application/use-cases/FinalizeNovelUseCase';
+import { PreparePartialRewriteUseCase } from '../../application/use-cases/PreparePartialRewriteUseCase';
+import { CompensateChapterFailureUseCase } from '../../application/use-cases/CompensateChapterFailureUseCase';
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -61,6 +64,9 @@ const sqsClient = lazy(() => new SQSClient({}));
 const storyRepository = lazy(
   () => new DynamoDbStoryRepository(dynamoDbDocumentClient(), requiredEnv('STORY_TABLE_NAME')),
 );
+const worldStateRepository = lazy(
+  () => new DynamoDbWorldStateRepository(dynamoDbDocumentClient(), requiredEnv('STORY_TABLE_NAME')),
+);
 const chapterContentStorage = lazy(
   () => new S3ChapterContentStorage(s3Client(), requiredEnv('CONTENT_BUCKET_NAME')),
 );
@@ -99,7 +105,12 @@ export const container = {
     () => new GenerateMetadataUseCase(storyRepository(), novelTextGenerator()),
   ),
   generatePlanUseCase: lazy(
-    () => new GeneratePlanUseCase(storyRepository(), novelTextGenerator()),
+    () =>
+      new GeneratePlanUseCase(
+        storyRepository(),
+        novelTextGenerator(),
+        worldStateRepository(),
+      ),
   ),
   requestApprovalUseCase: lazy(() => new RequestApprovalUseCase(storyRepository())),
   decideApprovalUseCase: lazy(
@@ -111,6 +122,23 @@ export const container = {
         storyRepository(),
         chapterContentStorage(),
         novelTextGenerator(),
+        worldStateRepository(),
+      ),
+  ),
+  preparePartialRewriteUseCase: lazy(
+    () =>
+      new PreparePartialRewriteUseCase(
+        storyRepository(),
+        worldStateRepository(),
+        chapterContentStorage(),
+      ),
+  ),
+  compensateChapterFailureUseCase: lazy(
+    () =>
+      new CompensateChapterFailureUseCase(
+        storyRepository(),
+        worldStateRepository(),
+        chapterContentStorage(),
       ),
   ),
   finalizeNovelUseCase: lazy(

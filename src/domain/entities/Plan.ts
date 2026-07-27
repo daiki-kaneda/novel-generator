@@ -2,6 +2,21 @@ import { ChapterOutline } from './Chapter';
 import { CharacterProfile } from './StoryMetadata';
 import { ValidationError } from '../errors/DomainErrors';
 
+/** 全編の粗いビート（起承転結など）。詳細アウトラインとは別層。 */
+export interface RoughBeat {
+  beatId: string;
+  label: string;
+  summary: string;
+  chapterIndexes: number[];
+}
+
+function copyRoughBeats(beats: readonly RoughBeat[]): RoughBeat[] {
+  return beats.map((b) => ({
+    ...b,
+    chapterIndexes: [...b.chapterIndexes],
+  }));
+}
+
 export interface PlanProps {
   summary: string;
   theme: string;
@@ -11,6 +26,10 @@ export interface PlanProps {
    */
   characters: CharacterProfile[];
   chapters: ChapterOutline[];
+  /** 粗い全体構造。未執筆側は Realign で更新される。 */
+  roughBeats: RoughBeat[];
+  /** Saga / 矛盾時に禁止する展開。 */
+  forbiddenDevelopments: string[];
   /** これまでにユーザーから寄せられたプラン修正フィードバックの履歴（再生成の根拠として保持）。 */
   revisionHistory: string[];
 }
@@ -44,6 +63,8 @@ export class PlanSnapshot {
         ...props.plan,
         characters: props.plan.characters.map((c) => ({ ...c })),
         chapters: [...props.plan.chapters],
+        roughBeats: copyRoughBeats(props.plan.roughBeats ?? []),
+        forbiddenDevelopments: [...(props.plan.forbiddenDevelopments ?? [])],
         revisionHistory: [...(props.plan.revisionHistory ?? [])],
       },
     });
@@ -70,6 +91,8 @@ export class PlanSnapshot {
       ...this.props.plan,
       characters: this.props.plan.characters.map((c) => ({ ...c })),
       chapters: [...this.props.plan.chapters],
+      roughBeats: copyRoughBeats(this.props.plan.roughBeats ?? []),
+      forbiddenDevelopments: [...(this.props.plan.forbiddenDevelopments ?? [])],
       revisionHistory: [...this.props.plan.revisionHistory],
     };
   }
@@ -91,7 +114,12 @@ export class PlanSnapshot {
 export class Plan {
   private constructor(private props: PlanProps) {}
 
-  static create(props: Omit<PlanProps, 'revisionHistory'>): Plan {
+  static create(
+    props: Omit<PlanProps, 'revisionHistory' | 'roughBeats' | 'forbiddenDevelopments'> & {
+      roughBeats?: RoughBeat[];
+      forbiddenDevelopments?: string[];
+    },
+  ): Plan {
     if (props.chapters.length === 0) {
       throw new ValidationError('Plan must contain at least one chapter');
     }
@@ -100,14 +128,30 @@ export class Plan {
       throw new ValidationError('Plan must contain at least one character');
     }
     Plan.validateCharacters(characters);
-    return new Plan({ ...props, characters, revisionHistory: [] });
+    const roughBeats =
+      props.roughBeats && props.roughBeats.length > 0
+        ? copyRoughBeats(props.roughBeats)
+        : Plan.defaultRoughBeats(props.chapters);
+    return new Plan({
+      ...props,
+      characters,
+      roughBeats,
+      forbiddenDevelopments: [...(props.forbiddenDevelopments ?? [])],
+      revisionHistory: [],
+    });
   }
 
   static restore(props: PlanProps): Plan {
+    const chapters = [...(props.chapters ?? [])];
     return new Plan({
       ...props,
       characters: Plan.normalizeCharacters(props.characters as unknown),
-      chapters: [...(props.chapters ?? [])],
+      chapters,
+      roughBeats:
+        props.roughBeats && props.roughBeats.length > 0
+          ? copyRoughBeats(props.roughBeats)
+          : Plan.defaultRoughBeats(chapters),
+      forbiddenDevelopments: [...(props.forbiddenDevelopments ?? [])],
       revisionHistory: [...(props.revisionHistory ?? [])],
     });
   }
@@ -126,6 +170,14 @@ export class Plan {
 
   get chapters(): readonly ChapterOutline[] {
     return this.props.chapters;
+  }
+
+  get roughBeats(): readonly RoughBeat[] {
+    return this.props.roughBeats;
+  }
+
+  get forbiddenDevelopments(): readonly string[] {
+    return this.props.forbiddenDevelopments;
   }
 
   get revisionHistory(): readonly string[] {
@@ -185,17 +237,55 @@ export class Plan {
     this.props.characters = next;
   }
 
+  replaceRoughBeats(roughBeats: RoughBeat[]): void {
+    this.props.roughBeats = copyRoughBeats(roughBeats);
+  }
+
+  addForbiddenDevelopment(development: string): void {
+    const trimmed = development.trim();
+    if (!trimmed) {
+      return;
+    }
+    if (!this.props.forbiddenDevelopments.includes(trimmed)) {
+      this.props.forbiddenDevelopments.push(trimmed);
+    }
+  }
+
+  /** 指定章の詳細アウトラインを差し替える（Expand 結果の反映）。 */
+  updateChapterOutline(index: number, title: string, outline: string): void {
+    const i = this.props.chapters.findIndex((c) => c.index === index);
+    if (i < 0) {
+      throw new ValidationError(`Plan does not contain chapter index ${index}`);
+    }
+    this.props.chapters[i] = { index, title, outline };
+  }
+
   toProps(): PlanProps {
     return {
       ...this.props,
       characters: Plan.copyCharacters(this.props.characters),
       chapters: [...this.props.chapters],
+      roughBeats: copyRoughBeats(this.props.roughBeats),
+      forbiddenDevelopments: [...this.props.forbiddenDevelopments],
       revisionHistory: [...this.props.revisionHistory],
     };
   }
 
   private static copyCharacters(characters: readonly CharacterProfile[]): CharacterProfile[] {
     return characters.map((c) => ({ ...c }));
+  }
+
+  /** 既存データ互換: 章一覧から粗いビートを合成する。 */
+  private static defaultRoughBeats(chapters: readonly ChapterOutline[]): RoughBeat[] {
+    if (chapters.length === 0) {
+      return [];
+    }
+    return chapters.map((chapter) => ({
+      beatId: `beat-${chapter.index}`,
+      label: chapter.title,
+      summary: chapter.outline,
+      chapterIndexes: [chapter.index],
+    }));
   }
 
   private static validateCharacters(characters: CharacterProfile[]): void {

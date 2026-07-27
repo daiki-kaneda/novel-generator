@@ -5,6 +5,7 @@ import { StoryMetadata } from '../../src/domain/entities/StoryMetadata';
 import {
   FakeStoryRepository,
   FakeNovelTextGenerator,
+  FakeWorldStateRepository,
   SAMPLE_PLAN_CHARACTERS,
 } from './support/fakes';
 
@@ -54,7 +55,8 @@ describe('GeneratePlanUseCase', () => {
       ],
     };
 
-    const useCase = new GeneratePlanUseCase(repo, generator);
+    const world = new FakeWorldStateRepository();
+    const useCase = new GeneratePlanUseCase(repo, generator, world);
     await useCase.execute({ storyId });
 
     const snapshots = await repo.listPlanSnapshots(storyId);
@@ -63,11 +65,13 @@ describe('GeneratePlanUseCase', () => {
     expect(snapshots[0].trigger).toBe('initial');
     expect(snapshots[0].plan.summary).toBe('plan summary');
     expect(snapshots[0].plan.chapters).toHaveLength(2);
+    expect(await world.listEntities(storyId)).toHaveLength(1);
   });
 
   it('clears previous snapshots when the plan is regenerated', async () => {
     const repo = new FakeStoryRepository();
     const generator = new FakeNovelTextGenerator();
+    const world = new FakeWorldStateRepository();
     const storyId = await seedStoryWithMetadata(repo);
 
     generator.generatePlanResult = {
@@ -77,7 +81,7 @@ describe('GeneratePlanUseCase', () => {
       chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
     };
 
-    const useCase = new GeneratePlanUseCase(repo, generator);
+    const useCase = new GeneratePlanUseCase(repo, generator, world);
     await useCase.execute({ storyId });
 
     await repo.savePlanSnapshot(

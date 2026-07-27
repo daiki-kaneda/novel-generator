@@ -12,6 +12,11 @@ export interface DecideApprovalInput {
   feedback?: string;
   /** expectedStageが`chapter`のとき、対象章のindex。 */
   chapterIndex?: number;
+  /**
+   * 最終拒否時に部分再生成を開始する章番号。
+   * 未指定時は最終章のみの再生成をデフォルトとする（フルリライト回避）。
+   */
+  rewriteFromChapterIndex?: number;
 }
 
 /**
@@ -44,9 +49,16 @@ export class DecideApprovalUseCase {
       }
     }
 
+    let rewriteFromChapterIndex = input.rewriteFromChapterIndex;
+    if (!input.approved && input.expectedStage === 'final' && rewriteFromChapterIndex === undefined) {
+      const plan = await this.storyRepository.findPlan(input.storyId);
+      const lastIndex = plan?.chapters[plan.chapters.length - 1]?.index;
+      rewriteFromChapterIndex = lastIndex ?? 1;
+    }
+
     const decision = input.approved
       ? ApprovalDecision.approve()
-      : ApprovalDecision.reject(input.feedback ?? '');
+      : ApprovalDecision.reject(input.feedback ?? '', rewriteFromChapterIndex);
 
     await this.approvalGateway.sendDecision(story.currentTaskToken, decision);
 

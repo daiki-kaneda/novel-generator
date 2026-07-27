@@ -4,7 +4,7 @@ import {
   CharacterProfile,
   WorldSetting,
 } from '../../domain/entities/StoryMetadata';
-import { PlanProps, PlanSnapshotTrigger } from '../../domain/entities/Plan';
+import { PlanProps, PlanSnapshotTrigger, RoughBeat } from '../../domain/entities/Plan';
 import { ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
 import { StoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
@@ -40,6 +40,8 @@ export interface StoryStatusOutput {
     theme: string;
     characters: CharacterProfile[];
     chapters: ChapterOutline[];
+    roughBeats: RoughBeat[];
+    forbiddenDevelopments: string[];
   };
   /** Plan 変遷スナップショット（初期 + 各章改訂後）。デバッグ・品質確認用。 */
   planSnapshots: Array<{
@@ -101,6 +103,11 @@ export class GetStoryStatusUseCase {
             theme: plan.theme,
             characters: plan.characters.map((c) => ({ ...c })),
             chapters: [...plan.chapters],
+            roughBeats: plan.roughBeats.map((b) => ({
+              ...b,
+              chapterIndexes: [...b.chapterIndexes],
+            })),
+            forbiddenDevelopments: [...plan.forbiddenDevelopments],
           }
         : undefined,
       planSnapshots: planSnapshots.map((snapshot) => snapshot.toProps()),

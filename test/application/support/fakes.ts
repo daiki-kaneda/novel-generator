@@ -1,5 +1,6 @@
 import { StoryRepository } from '../../../src/application/ports/StoryRepository';
 import { ChapterContentStorage } from '../../../src/application/ports/ChapterContentStorage';
+import { WorldStateRepository } from '../../../src/application/ports/WorldStateRepository';
 import {
   NovelTextGenerator,
   GenerateMetadataInput,
@@ -10,6 +11,14 @@ import {
   RevisePlanInput,
   RevisedPlan,
   LlmCallContext,
+  ExtractAtomicFactsInput,
+  ExtractedAtomicFacts,
+  DetectContradictionsInput,
+  ContradictionCheckResult,
+  ExpandChapterOutlineInput,
+  ExpandedChapterOutline,
+  RealignFuturePlanInput,
+  RealignedFuturePlan,
 } from '../../../src/application/ports/NovelTextGenerator';
 import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway';
 import { NotificationSender } from '../../../src/application/ports/NotificationSender';
@@ -18,6 +27,12 @@ import { Story } from '../../../src/domain/entities/Story';
 import { CharacterProfile, StoryMetadata } from '../../../src/domain/entities/StoryMetadata';
 import { Plan, PlanSnapshot } from '../../../src/domain/entities/Plan';
 import { Chapter } from '../../../src/domain/entities/Chapter';
+import {
+  AtomicFact,
+  WorldEntity,
+  WorldStateSnapshot,
+  isFactActiveAt,
+} from '../../../src/domain/entities/WorldState';
 import { NotFoundError } from '../../../src/domain/errors/DomainErrors';
 import { ApprovalDecision } from '../../../src/domain/value-objects/ApprovalDecision';
 import { StoryLength } from '../../../src/domain/value-objects/StoryLength';
@@ -36,8 +51,6 @@ export const SAMPLE_PLAN_CHARACTERS: CharacterProfile[] = [
 
 /**
  * ユースケースをAWSに依存せずテストするためのインメモリなFake実装群。
- * クリーンアーキテクチャによりポート（インターフェース）を経由しているため、
- * 本物のDynamoDB/S3/Bedrock等の代わりにこれらを注入するだけでユニットテストできる。
  */
 export class FakeStoryRepository implements StoryRepository {
   private readonly stories = new Map<string, Story>();
@@ -149,6 +162,89 @@ export class FakeStoryRepository implements StoryRepository {
   }
 }
 
+export class FakeWorldStateRepository implements WorldStateRepository {
+  private readonly entities = new Map<string, Map<string, WorldEntity>>();
+  private readonly facts = new Map<string, Map<string, AtomicFact>>();
+  private readonly snapshots = new Map<string, Map<number, WorldStateSnapshot>>();
+
+  async listEntities(storyId: string): Promise<WorldEntity[]> {
+    return Array.from(this.entities.get(storyId)?.values() ?? []).map((e) => ({ ...e }));
+  }
+
+  async upsertEntities(storyId: string, entities: WorldEntity[]): Promise<void> {
+    const byId = this.entities.get(storyId) ?? new Map<string, WorldEntity>();
+    for (const entity of entities) {
+      byId.set(entity.entityId, { ...entity });
+    }
+    this.entities.set(storyId, byId);
+  }
+
+  async listActiveFacts(storyId: string, asOfChapterIndex: number): Promise<AtomicFact[]> {
+    const all = await this.listAllFacts(storyId);
+    return all.filter((fact) => isFactActiveAt(fact, asOfChapterIndex));
+  }
+
+  async listAllFacts(storyId: string): Promise<AtomicFact[]> {
+    return Array.from(this.facts.get(storyId)?.values() ?? []).map((f) => ({
+      ...f,
+      entityIds: [...f.entityIds],
+      supersedes: f.supersedes ? [...f.supersedes] : undefined,
+    }));
+  }
+
+  async appendFacts(storyId: string, facts: AtomicFact[]): Promise<void> {
+    const byId = this.facts.get(storyId) ?? new Map<string, AtomicFact>();
+    for (const fact of facts) {
+      byId.set(fact.factId, {
+        ...fact,
+        entityIds: [...fact.entityIds],
+        supersedes: fact.supersedes ? [...fact.supersedes] : undefined,
+      });
+    }
+    this.facts.set(storyId, byId);
+  }
+
+  async closeFacts(storyId: string, factIds: string[], closedAtChapter: number): Promise<void> {
+    const byId = this.facts.get(storyId);
+    if (!byId) {
+      return;
+    }
+    for (const factId of factIds) {
+      const fact = byId.get(factId);
+      if (fact) {
+        byId.set(factId, { ...fact, validToChapter: closedAtChapter });
+      }
+    }
+  }
+
+  async saveSnapshot(storyId: string, snapshot: WorldStateSnapshot): Promise<void> {
+    const byIndex = this.snapshots.get(storyId) ?? new Map<number, WorldStateSnapshot>();
+    byIndex.set(snapshot.afterChapterIndex, WorldStateSnapshot.restore(snapshot.toProps()));
+    this.snapshots.set(storyId, byIndex);
+  }
+
+  async getSnapshot(storyId: string, afterChapterIndex: number): Promise<WorldStateSnapshot | null> {
+    return this.snapshots.get(storyId)?.get(afterChapterIndex) ?? null;
+  }
+
+  async rollbackToSnapshot(storyId: string, afterChapterIndex: number): Promise<void> {
+    const snapshot = await this.getSnapshot(storyId, afterChapterIndex);
+    await this.clearWorldState(storyId);
+    if (!snapshot) {
+      return;
+    }
+    await this.upsertEntities(storyId, snapshot.entities);
+    await this.appendFacts(storyId, snapshot.facts);
+    await this.saveSnapshot(storyId, snapshot);
+  }
+
+  async clearWorldState(storyId: string): Promise<void> {
+    this.entities.delete(storyId);
+    this.facts.delete(storyId);
+    this.snapshots.delete(storyId);
+  }
+}
+
 export class FakeChapterContentStorage implements ChapterContentStorage {
   private readonly texts = new Map<string, string>();
 
@@ -164,6 +260,10 @@ export class FakeChapterContentStorage implements ChapterContentStorage {
       throw new NotFoundError(`No fake content stored for key ${s3Key}`);
     }
     return text;
+  }
+
+  async deleteChapterText(_storyId: string, s3Key: string): Promise<void> {
+    this.texts.delete(s3Key);
   }
 
   async saveFinalText(storyId: string, text: string): Promise<string> {
@@ -206,9 +306,39 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
     theme: 'fake theme',
     characters: SAMPLE_PLAN_CHARACTERS.map((c) => ({ ...c })),
     chapters: [{ index: 1, title: 'Chapter 1', outline: 'outline 1' }],
+    roughBeats: [
+      {
+        beatId: 'beat-1',
+        label: '起',
+        summary: '始まり',
+        chapterIndexes: [1],
+      },
+    ],
   };
   generateChapterTextResult = 'fake chapter text';
   summarizeChapterResult = 'fake chapter summary';
+  extractAtomicFactsResult: ExtractedAtomicFacts = {
+    facts: [
+      {
+        subject: 'Hero',
+        predicate: 'obtained',
+        object: 'sword',
+        entityIds: ['char-hero', 'item-sword'],
+        validFromChapter: 1,
+        validToChapter: null,
+        supersedes: [],
+      },
+    ],
+    entities: [
+      {
+        entityId: 'char-hero',
+        name: 'Hero',
+        kind: 'character',
+        attributes: '主人公',
+      },
+    ],
+    sceneSummary: 'Hero found the sword',
+  };
 
   async generateMetadata(_input: GenerateMetadataInput): Promise<GeneratedMetadata> {
     return this.generateMetadataResult;
@@ -230,9 +360,48 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
     return this.summarizeChapterResult;
   }
 
-  /** デフォルトは入力の未来章・登場人物をそのまま返す（改訂なし）。 */
   async revisePlan(input: RevisePlanInput): Promise<RevisedPlan> {
     return {
+      chapters: input.futureChapters.map((chapter) => ({ ...chapter })),
+      characters: input.characters.map((c) => ({ ...c })),
+    };
+  }
+
+  async extractAtomicFacts(input: ExtractAtomicFactsInput): Promise<ExtractedAtomicFacts> {
+    return {
+      ...this.extractAtomicFactsResult,
+      facts: this.extractAtomicFactsResult.facts.map((f) => ({
+        ...f,
+        validFromChapter: input.chapterIndex,
+      })),
+      sceneSummary: this.extractAtomicFactsResult.sceneSummary,
+    };
+  }
+
+  async detectContradictions(
+    _input: DetectContradictionsInput,
+  ): Promise<ContradictionCheckResult> {
+    return { hasContradiction: false, contradictions: [] };
+  }
+
+  async expandChapterOutline(input: ExpandChapterOutlineInput): Promise<ExpandedChapterOutline> {
+    return {
+      title: input.currentOutline.title,
+      outline: input.currentOutline.outline,
+      discoursePlan: [
+        { role: 'theme', purpose: '章の主題を提示する' },
+        { role: 'result', purpose: '出来事の結果を描く' },
+      ],
+      dialogueToNarrationRatio: '会話3:地の文7',
+    };
+  }
+
+  async realignFuturePlan(input: RealignFuturePlanInput): Promise<RealignedFuturePlan> {
+    return {
+      roughBeats: input.roughBeats.map((b) => ({
+        ...b,
+        chapterIndexes: [...b.chapterIndexes],
+      })),
       chapters: input.futureChapters.map((chapter) => ({ ...chapter })),
       characters: input.characters.map((c) => ({ ...c })),
     };

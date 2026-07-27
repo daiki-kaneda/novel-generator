@@ -13,3 +13,21 @@ export class ValidationError extends Error {
     this.name = 'ValidationError';
   }
 }
+
+/** TKG 矛盾検出時。Step Functions の Catch で捕捉する。 */
+export class ContradictionDetectedError extends Error {
+  readonly contradictions: Array<{
+    newFact: string;
+    conflictingFact: string;
+    reason: string;
+  }>;
+
+  constructor(
+    message: string,
+    contradictions: Array<{ newFact: string; conflictingFact: string; reason: string }> = [],
+  ) {
+    super(message);
+    this.name = 'ContradictionDetectedError';
+    this.contradictions = contradictions;
+  }
+}
