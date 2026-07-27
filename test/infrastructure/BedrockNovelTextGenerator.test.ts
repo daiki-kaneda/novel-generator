@@ -14,6 +14,11 @@ describe('BedrockNovelTextGenerator structured logging', () => {
     return new BedrockNovelTextGenerator(client, modelId);
   }
 
+  function lastConverseInput(sendMock: jest.Mock): Record<string, unknown> {
+    const command = sendMock.mock.calls[0][0] as { input: Record<string, unknown> };
+    return command.input;
+  }
+
   function parseLoggedEvents(logSpy: jest.SpyInstance): BedrockConverseLogEvent[] {
     return logSpy.mock.calls
       .map((call) => {
@@ -36,21 +41,20 @@ describe('BedrockNovelTextGenerator structured logging', () => {
 
   it('logs a successful bedrock_converse event with tokens and context', async () => {
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
-    const generator = createGenerator(
-      jest.fn().mockResolvedValue({
-        output: {
-          message: {
-            content: [{ text: '{"overview":"o","theme":"t","tone":"tone","characters":[{"name":"H","role":"主人公","personality":"p","background":"b","goals":"g","relationships":"r"}],"world":{"geography":"g","timePeriod":"t"},"timelineRules":"tr","consistencyNotes":"cn"}' }],
-          },
+    const send = jest.fn().mockResolvedValue({
+      output: {
+        message: {
+          content: [{ text: '{"overview":"o","theme":"t","tone":"tone","characters":[{"name":"H","role":"主人公","personality":"p","background":"b","goals":"g","relationships":"r"}],"world":{"geography":"g","timePeriod":"t"},"timelineRules":"tr","consistencyNotes":"cn"}' }],
         },
-        usage: {
-          inputTokens: 100,
-          outputTokens: 50,
-          totalTokens: 150,
-        },
-        stopReason: 'end_turn',
-      }),
-    );
+      },
+      usage: {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      },
+      stopReason: 'end_turn',
+    });
+    const generator = createGenerator(send);
 
     await generator.generateMetadata({
       overview: 'overview',
@@ -75,9 +79,17 @@ describe('BedrockNovelTextGenerator structured logging', () => {
       success: true,
       errorName: null,
       errorMessage: null,
+      structuredOutput: true,
     });
     expect(events[0].durationMs).toBeGreaterThanOrEqual(0);
     expect(events[0]).not.toHaveProperty('chapterIndex');
+
+    const input = lastConverseInput(send);
+    expect(input.outputConfig).toMatchObject({
+      textFormat: {
+        type: 'json_schema',
+      },
+    });
   });
 
   it('logs success=false and rethrows when Bedrock fails', async () => {
@@ -127,23 +139,22 @@ describe('BedrockNovelTextGenerator structured logging', () => {
     });
   });
 
-  it('includes chapterIndex for chapter generation logging', async () => {
+  it('includes chapterIndex for chapter generation logging without structured output', async () => {
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
-    const generator = createGenerator(
-      jest.fn().mockResolvedValue({
-        output: {
-          message: {
-            content: [{ text: 'generated chapter body' }],
-          },
+    const send = jest.fn().mockResolvedValue({
+      output: {
+        message: {
+          content: [{ text: 'generated chapter body' }],
         },
-        usage: {
-          inputTokens: 10,
-          outputTokens: 20,
-          totalTokens: 30,
-        },
-        stopReason: 'end_turn',
-      }),
-    );
+      },
+      usage: {
+        inputTokens: 10,
+        outputTokens: 20,
+        totalTokens: 30,
+      },
+      stopReason: 'end_turn',
+    });
+    const generator = createGenerator(send);
 
     await generator.generateChapterText({
       metadata: {
@@ -180,6 +191,26 @@ describe('BedrockNovelTextGenerator structured logging', () => {
       storyId: 'story-ch',
       chapterIndex: 1,
       success: true,
+      structuredOutput: false,
     });
+    expect(lastConverseInput(send).outputConfig).toBeUndefined();
+  });
+
+  it('throws when summarizeChapter JSON cannot be parsed', async () => {
+    const generator = createGenerator(
+      jest.fn().mockResolvedValue({
+        output: {
+          message: {
+            content: [{ text: 'not-json' }],
+          },
+        },
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        stopReason: 'end_turn',
+      }),
+    );
+
+    await expect(generator.summarizeChapter('chapter', 'short')).rejects.toThrow(
+      /Failed to parse Bedrock JSON response/,
+    );
   });
 });
