@@ -7,6 +7,12 @@ import {
 } from '../../domain/entities/StoryMetadata';
 import { StoryLength } from '../../domain/value-objects/StoryLength';
 
+/** LLM 呼び出しの構造化ログ・追跡用に付与する相関コンテキスト。 */
+export interface LlmCallContext {
+  storyId: string;
+  chapterIndex?: number;
+}
+
 export interface GenerateMetadataInput {
   overview: string;
   theme: string;
@@ -16,6 +22,7 @@ export interface GenerateMetadataInput {
   length: StoryLength;
   previousMetadata?: StoryMetadataProps;
   feedback?: string;
+  callContext?: LlmCallContext;
 }
 
 export interface GeneratedMetadata {
@@ -34,6 +41,7 @@ export interface GeneratePlanInput {
   /** プラン拒否による再生成の場合、直前のプランと今回のフィードバックを渡す。 */
   previousPlan?: PlanProps;
   feedback?: string;
+  callContext?: LlmCallContext;
 }
 
 export interface GeneratedPlan {
@@ -67,6 +75,7 @@ export interface GenerateChapterTextInput {
   previousChapterSummary?: string;
   /** 改訂時のみ、この章に対する具体的な修正指示。 */
   revisionInstruction?: string;
+  callContext?: LlmCallContext;
 }
 
 /** 章完成後に未来章アウトラインと登場人物を自然になるよう改訂するための入力。 */
@@ -81,6 +90,7 @@ export interface RevisePlanInput {
   /** 改訂対象となる、完了章より後の章アウトライン。 */
   futureChapters: ChapterOutline[];
   length: StoryLength;
+  callContext?: LlmCallContext;
 }
 
 export interface RevisedPlan {
@@ -97,7 +107,11 @@ export interface NovelTextGenerator {
   generatePlan(input: GeneratePlanInput): Promise<GeneratedPlan>;
   generateChapterText(input: GenerateChapterTextInput): Promise<string>;
   /** 次章生成のコンテキストとして渡すための、章本文の重要ポイント要約を生成する。 */
-  summarizeChapter(chapterText: string, length: StoryLength): Promise<string>;
+  summarizeChapter(
+    chapterText: string,
+    length: StoryLength,
+    callContext?: LlmCallContext,
+  ): Promise<string>;
   /**
    * 完了した章の要約を踏まえ、未来章の title/outline と登場人物プロフィールを改訂する。
    * chapters の index 集合は入力の futureChapters と完全一致しなければならない。

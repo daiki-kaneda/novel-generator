@@ -8,6 +8,7 @@ import {
   GenerateChapterTextInput,
   RevisePlanInput,
   RevisedPlan,
+  LlmCallContext,
 } from '../../application/ports/NovelTextGenerator';
 import { STORY_LENGTH_PRESETS, StoryLength } from '../../domain/value-objects/StoryLength';
 
@@ -28,6 +29,30 @@ const CHARACTER_PROFILE_SCHEMA = {
   speechStyle: 'string (optional)',
   appearance: 'string (optional, 年齢感・体格・髪型・服装などの特徴を1文程度で)',
 };
+
+export type BedrockConversePhase =
+  | 'generate_metadata'
+  | 'generate_plan'
+  | 'generate_chapter'
+  | 'summarize_chapter'
+  | 'revise_plan';
+
+export interface BedrockConverseLogEvent {
+  event: 'bedrock_converse';
+  phase: BedrockConversePhase;
+  modelId: string;
+  storyId?: string;
+  chapterIndex?: number;
+  durationMs: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  maxTokens: number;
+  stopReason: string | null;
+  success: boolean;
+  errorName: string | null;
+  errorMessage: string | null;
+}
 
 /**
  * Bedrock (Claude Sonnet) を使ったテキスト生成アダプタ。
@@ -105,7 +130,13 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       );
     }
 
-    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), METADATA_MAX_TOKENS);
+    const responseText = await this.converse(
+      'generate_metadata',
+      systemPrompt,
+      sections.join('\n\n'),
+      METADATA_MAX_TOKENS,
+      input.callContext,
+    );
     return this.parseJson<GeneratedMetadata>(responseText);
   }
 
@@ -150,7 +181,13 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       );
     }
 
-    const responseText = await this.converse(systemPrompt, sections.join('\n\n'), PLAN_MAX_TOKENS);
+    const responseText = await this.converse(
+      'generate_plan',
+      systemPrompt,
+      sections.join('\n\n'),
+      PLAN_MAX_TOKENS,
+      input.callContext,
+    );
     return this.parseJson<GeneratedPlan>(responseText);
   }
 
@@ -188,7 +225,13 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       sections.push(`改訂指示（この内容を必ず反映して書き直してください）: ${input.revisionInstruction}`);
     }
 
-    return await this.converse(systemPrompt, sections.join('\n\n'), preset.chapterMaxTokens);
+    return await this.converse(
+      'generate_chapter',
+      systemPrompt,
+      sections.join('\n\n'),
+      preset.chapterMaxTokens,
+      input.callContext,
+    );
   }
 
   async revisePlan(input: RevisePlanInput): Promise<RevisedPlan> {
@@ -232,9 +275,11 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
     ];
 
     const responseText = await this.converse(
+      'revise_plan',
       systemPrompt,
       sections.join('\n\n'),
       PLAN_REVISION_MAX_TOKENS,
+      input.callContext,
     );
     const parsed = this.parseJson<RevisedPlan>(responseText);
     if (!Array.isArray(parsed.chapters)) {
@@ -246,7 +291,11 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
     return parsed;
   }
 
-  async summarizeChapter(chapterText: string, length: StoryLength): Promise<string> {
+  async summarizeChapter(
+    chapterText: string,
+    length: StoryLength,
+    callContext?: LlmCallContext,
+  ): Promise<string> {
     const preset = STORY_LENGTH_PRESETS[length];
     const systemPrompt = [
       '次の章本文から、次の章を書く上で必要な重要ポイントを抽出してください。',
@@ -256,7 +305,13 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
       'timeAndPlace には時刻・経過時間・季節・場所の相対関係を含めてください。',
     ].join('\n');
 
-    const responseText = await this.converse(systemPrompt, chapterText, preset.summaryMaxTokens);
+    const responseText = await this.converse(
+      'summarize_chapter',
+      systemPrompt,
+      chapterText,
+      preset.summaryMaxTokens,
+      callContext,
+    );
     // 次章プロンプトへ渡しやすいよう、構造化結果を読みやすい文章に整形する。
     try {
       const parsed = this.parseJson<{
@@ -277,24 +332,95 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
   }
 
   private async converse(
+    phase: BedrockConversePhase,
     systemPrompt: string,
     userContent: string,
     maxTokens: number,
+    callContext?: LlmCallContext,
   ): Promise<string> {
-    const result = await this.client.send(
-      new ConverseCommand({
-        modelId: this.modelId,
-        system: [{ text: systemPrompt }],
-        messages: [{ role: 'user', content: [{ text: userContent }] }],
-        inferenceConfig: { maxTokens, temperature: 0.7 },
-      }),
-    );
+    const startedAt = Date.now();
+    try {
+      const result = await this.client.send(
+        new ConverseCommand({
+          modelId: this.modelId,
+          system: [{ text: systemPrompt }],
+          messages: [{ role: 'user', content: [{ text: userContent }] }],
+          inferenceConfig: { maxTokens, temperature: 0.7 },
+        }),
+      );
 
-    const text = result.output?.message?.content?.find((block) => block.text)?.text;
-    if (!text) {
-      throw new Error('Bedrock returned an empty response');
+      const text = result.output?.message?.content?.find((block) => block.text)?.text;
+      if (!text) {
+        throw new Error('Bedrock returned an empty response');
+      }
+
+      this.logBedrockConverse({
+        phase,
+        callContext,
+        durationMs: Date.now() - startedAt,
+        maxTokens,
+        inputTokens: result.usage?.inputTokens ?? null,
+        outputTokens: result.usage?.outputTokens ?? null,
+        totalTokens: result.usage?.totalTokens ?? null,
+        stopReason: result.stopReason ?? null,
+        success: true,
+        errorName: null,
+        errorMessage: null,
+      });
+
+      return text;
+    } catch (error) {
+      const err = error as Error;
+      this.logBedrockConverse({
+        phase,
+        callContext,
+        durationMs: Date.now() - startedAt,
+        maxTokens,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        stopReason: null,
+        success: false,
+        errorName: err.name ?? 'Error',
+        errorMessage: err.message ?? String(error),
+      });
+      throw error;
     }
-    return text;
+  }
+
+  private logBedrockConverse(args: {
+    phase: BedrockConversePhase;
+    callContext?: LlmCallContext;
+    durationMs: number;
+    maxTokens: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    stopReason: string | null;
+    success: boolean;
+    errorName: string | null;
+    errorMessage: string | null;
+  }): void {
+    const payload: BedrockConverseLogEvent = {
+      event: 'bedrock_converse',
+      phase: args.phase,
+      modelId: this.modelId,
+      storyId: args.callContext?.storyId,
+      chapterIndex: args.callContext?.chapterIndex,
+      durationMs: args.durationMs,
+      inputTokens: args.inputTokens,
+      outputTokens: args.outputTokens,
+      totalTokens: args.totalTokens,
+      maxTokens: args.maxTokens,
+      stopReason: args.stopReason,
+      success: args.success,
+      errorName: args.errorName,
+      errorMessage: args.errorMessage,
+    };
+    // CloudWatch Logs Insights でパースしやすいよう1行JSONにする。
+    // アプリケーション層と同様、DOM lib 非依存のため globalThis 経由で出力する。
+    const log = (globalThis as { console?: { log?: (...args: unknown[]) => void } }).console?.log;
+    log?.(JSON.stringify(payload));
   }
 
   private parseJson<T>(text: string): T {

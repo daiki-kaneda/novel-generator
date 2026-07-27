@@ -9,6 +9,7 @@ import {
   GenerateChapterTextInput,
   RevisePlanInput,
   RevisedPlan,
+  LlmCallContext,
 } from '../../../src/application/ports/NovelTextGenerator';
 import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway';
 import { NotificationSender } from '../../../src/application/ports/NotificationSender';
@@ -221,7 +222,11 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
     return this.generateChapterTextResult;
   }
 
-  async summarizeChapter(_chapterText: string, _length: StoryLength): Promise<string> {
+  async summarizeChapter(
+    _chapterText: string,
+    _length: StoryLength,
+    _callContext?: LlmCallContext,
+  ): Promise<string> {
     return this.summarizeChapterResult;
   }
 

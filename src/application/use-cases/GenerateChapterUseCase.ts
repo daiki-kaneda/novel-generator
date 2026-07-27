@@ -63,6 +63,8 @@ export class GenerateChapterUseCase {
       .filter((outline) => outline.index <= input.chapterIndex)
       .map((outline) => ({ ...outline }));
 
+    const callContext = { storyId: input.storyId, chapterIndex: input.chapterIndex };
+
     const chapterText = await this.novelTextGenerator.generateChapterText({
       metadata: {
         overview: metadataProps.overview,
@@ -85,6 +87,7 @@ export class GenerateChapterUseCase {
       length: story.request.length,
       previousChapterSummary: previousChapter?.summaryKeyPoints,
       revisionInstruction: chapter.revisionInstruction,
+      callContext,
     });
 
     const s3Key = await this.chapterContentStorage.saveChapterText(
@@ -95,6 +98,7 @@ export class GenerateChapterUseCase {
     const summary = await this.novelTextGenerator.summarizeChapter(
       chapterText,
       story.request.length,
+      callContext,
     );
 
     chapter.complete(s3Key, summary);
@@ -154,6 +158,10 @@ export class GenerateChapterUseCase {
         },
         futureChapters,
         length: args.length,
+        callContext: {
+          storyId: args.storyId,
+          chapterIndex: args.completedChapterIndex,
+        },
       });
       args.plan.reviseFutureChapters(args.completedChapterIndex, revised.chapters);
       args.plan.replaceCharacters(revised.characters);
