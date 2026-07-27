@@ -16,9 +16,22 @@ export interface CreateHandlerFunctionProps {
 }
 
 /**
+ * ランタイム同梱の SDK で足りるクライアントは外部化し、デプロイサイズを抑える。
+ * Bedrock は structured output（OutputFormatType など）が必要なため同梱する。
+ * ランタイム同梱版には未実装の API があり、external だと実行時に undefined になる。
+ */
+const EXTERNAL_AWS_SDK_MODULES = [
+  '@aws-sdk/client-dynamodb',
+  '@aws-sdk/lib-dynamodb',
+  '@aws-sdk/client-s3',
+  '@aws-sdk/s3-request-presigner',
+  '@aws-sdk/client-sfn',
+  '@aws-sdk/client-ses',
+  '@aws-sdk/client-sqs',
+];
+
+/**
  * `src/interface/handlers/*.ts`をエントリポイントとするLambda関数を作成する共通ヘルパー。
- * AWS Lambdaのnodejs20.xランタイムにはAWS SDK for JavaScript v3が組み込まれているため、
- * バンドルから除外してコールドスタートとデプロイサイズを削減する。
  */
 export function createHandlerFunction(
   scope: Construct,
@@ -35,7 +48,7 @@ export function createHandlerFunction(
     environment: props.environment,
     description: props.description,
     bundling: {
-      externalModules: ['@aws-sdk/*'],
+      externalModules: EXTERNAL_AWS_SDK_MODULES,
       minify: true,
     },
   });
