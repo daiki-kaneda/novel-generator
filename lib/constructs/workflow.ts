@@ -509,7 +509,25 @@ export class NovelWorkflow extends Construct {
       inputPath: '$[0]',
     });
 
-    const definition = unwrapPipeBatch.next(generateMetadata);
+    const inputAlreadyObject = new sfn.Pass(this, 'InputAlreadyObject', {
+      comment: 'オブジェクト入力（Pipe単体や改訂開始）はそのまま通す',
+    });
+
+    const isRevision = new sfn.Choice(this, 'IsRevision?')
+      .when(
+        sfn.Condition.isPresent('$.rewriteFromChapterIndex'),
+        preparePartialRewrite,
+      )
+      .otherwise(generateMetadata);
+
+    unwrapPipeBatch.next(isRevision);
+    inputAlreadyObject.next(isRevision);
+
+    const normalizeInput = new sfn.Choice(this, 'NormalizeInput?')
+      .when(sfn.Condition.isPresent('$[0].storyId'), unwrapPipeBatch)
+      .otherwise(inputAlreadyObject);
+
+    const definition = normalizeInput;
 
     return new sfn.StateMachine(this, 'StateMachine', {
       stateMachineType: sfn.StateMachineType.STANDARD,

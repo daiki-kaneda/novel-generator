@@ -11,6 +11,7 @@ import { DynamoDbWorldStateRepository } from '../../infrastructure/dynamodb/Dyna
 import { S3ChapterContentStorage } from '../../infrastructure/s3/S3ChapterContentStorage';
 import { BedrockNovelTextGenerator } from '../../infrastructure/bedrock/BedrockNovelTextGenerator';
 import { StepFunctionsApprovalGateway } from '../../infrastructure/stepfunctions/StepFunctionsApprovalGateway';
+import { StepFunctionsWorkflowStarter } from '../../infrastructure/stepfunctions/StepFunctionsWorkflowStarter';
 import { SesNotificationSender } from '../../infrastructure/ses/SesNotificationSender';
 import { SqsRequestQueue } from '../../infrastructure/sqs/SqsRequestQueue';
 
@@ -25,6 +26,7 @@ import { GenerateChapterUseCase } from '../../application/use-cases/GenerateChap
 import { FinalizeNovelUseCase } from '../../application/use-cases/FinalizeNovelUseCase';
 import { PreparePartialRewriteUseCase } from '../../application/use-cases/PreparePartialRewriteUseCase';
 import { CompensateChapterFailureUseCase } from '../../application/use-cases/CompensateChapterFailureUseCase';
+import { StartRevisionUseCase } from '../../application/use-cases/StartRevisionUseCase';
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -74,6 +76,9 @@ const novelTextGenerator = lazy(
   () => new BedrockNovelTextGenerator(bedrockClient(), requiredEnv('BEDROCK_MODEL_ID')),
 );
 const approvalGateway = lazy(() => new StepFunctionsApprovalGateway(sfnClient()));
+const workflowStarter = lazy(
+  () => new StepFunctionsWorkflowStarter(sfnClient(), requiredEnv('STATE_MACHINE_ARN')),
+);
 const notificationSender = lazy(
   () => new SesNotificationSender(sesClient(), requiredEnv('NOTIFICATION_FROM_ADDRESS')),
 );
@@ -149,5 +154,8 @@ export const container = {
         notificationSender(),
         finalUrlExpirySeconds(),
       ),
+  ),
+  startRevisionUseCase: lazy(
+    () => new StartRevisionUseCase(storyRepository(), workflowStarter()),
   ),
 };

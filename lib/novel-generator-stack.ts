@@ -38,6 +38,7 @@ export class NovelGeneratorStack extends cdk.Stack {
       storyRequestQueueUrl: ingestion.requestQueue.queueUrl,
       storyRequestQueueArn: ingestion.requestQueue.queueArn,
       finalUrlExpirySeconds: appConfig.novel.finalUrlExpirySeconds,
+      stateMachine: workflow.stateMachine,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {

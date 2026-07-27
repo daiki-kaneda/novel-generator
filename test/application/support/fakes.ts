@@ -23,6 +23,7 @@ import {
 import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway';
 import { NotificationSender } from '../../../src/application/ports/NotificationSender';
 import { RequestQueue } from '../../../src/application/ports/RequestQueue';
+import { WorkflowStarter } from '../../../src/application/ports/WorkflowStarter';
 import { Story } from '../../../src/domain/entities/Story';
 import { CharacterProfile, StoryMetadata } from '../../../src/domain/entities/StoryMetadata';
 import { Plan, PlanSnapshot } from '../../../src/domain/entities/Plan';
@@ -429,5 +430,15 @@ export class FakeRequestQueue implements RequestQueue {
 
   async enqueueStoryRequest(storyId: string): Promise<void> {
     this.enqueued.push(storyId);
+  }
+}
+
+export class FakeWorkflowStarter implements WorkflowStarter {
+  readonly started: Array<Record<string, unknown>> = [];
+  nextExecutionArn = 'arn:aws:states:us-east-1:123:execution:novel:rev-1';
+
+  async startExecution(input: Record<string, unknown>): Promise<{ executionArn: string }> {
+    this.started.push(input);
+    return { executionArn: this.nextExecutionArn };
   }
 }
