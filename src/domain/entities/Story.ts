@@ -142,8 +142,15 @@ export class Story {
     this.touch();
   }
 
+  /** 実行中ワークフローの ARN をロックとして記録する。 */
   bindExecution(executionArn: string): void {
     this.props.executionArn = executionArn;
+    this.touch();
+  }
+
+  /** ワークフロー終端後に実行中ロックを解除する。 */
+  clearExecution(): void {
+    this.props.executionArn = undefined;
     this.touch();
   }
 

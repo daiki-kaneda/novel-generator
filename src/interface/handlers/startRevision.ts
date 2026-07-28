@@ -2,7 +2,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { container } from '../composition/container';
 import { jsonResponse, errorResponse } from './support/httpResponse';
 
-/** POST /stories/{storyId}/revisions: 完成済み物語の部分改訂ワークフローを開始する。 */
+/** POST /stories/{storyId}/revisions: 部分再生成（改訂・実行失敗後の復旧）を開始する。 */
 export const handler = async (
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> => {

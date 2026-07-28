@@ -15,6 +15,9 @@ import { StepFunctionsWorkflowStarter } from '../../infrastructure/stepfunctions
 import { SesNotificationSender } from '../../infrastructure/ses/SesNotificationSender';
 import { SqsRequestQueue } from '../../infrastructure/sqs/SqsRequestQueue';
 
+import { BindExecutionUseCase } from '../../application/use-cases/BindExecutionUseCase';
+import { ClearExecutionUseCase } from '../../application/use-cases/ClearExecutionUseCase';
+import { StartRevisionUseCase } from '../../application/use-cases/StartRevisionUseCase';
 import { SubmitStoryUseCase } from '../../application/use-cases/SubmitStoryUseCase';
 import { GetStoryStatusUseCase } from '../../application/use-cases/GetStoryStatusUseCase';
 import { GetChapterContentUseCase } from '../../application/use-cases/GetChapterContentUseCase';
@@ -26,7 +29,6 @@ import { GenerateChapterUseCase } from '../../application/use-cases/GenerateChap
 import { FinalizeNovelUseCase } from '../../application/use-cases/FinalizeNovelUseCase';
 import { PreparePartialRewriteUseCase } from '../../application/use-cases/PreparePartialRewriteUseCase';
 import { CompensateChapterFailureUseCase } from '../../application/use-cases/CompensateChapterFailureUseCase';
-import { StartRevisionUseCase } from '../../application/use-cases/StartRevisionUseCase';
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -158,4 +160,6 @@ export const container = {
   startRevisionUseCase: lazy(
     () => new StartRevisionUseCase(storyRepository(), workflowStarter()),
   ),
+  bindExecutionUseCase: lazy(() => new BindExecutionUseCase(storyRepository())),
+  clearExecutionUseCase: lazy(() => new ClearExecutionUseCase(storyRepository())),
 };

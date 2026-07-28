@@ -2,6 +2,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
+import { Stack } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Construct } from 'constructs';
@@ -18,7 +19,7 @@ export interface NovelApiProps {
 
 /**
  * ユーザー操作（物語の送信、状態確認、メタデータ/プラン/章/最終原稿の承認・拒否、
- * 完成後の部分改訂開始、章本文取得）を受け付ける HTTP API Gatewayと、
+ * 部分再生成（改訂・復旧）の開始、章本文取得）を受け付ける HTTP API Gatewayと、
  * それぞれに対応するLambda関数を定義する。
  */
 export class NovelApi extends Construct {
@@ -113,7 +114,7 @@ export class NovelApi extends Construct {
 
     const startRevisionFn = createHandlerFunction(this, 'StartRevisionFunction', {
       entry: 'startRevision.ts',
-      description: 'POST /stories/{storyId}/revisions: 完成済み物語の部分改訂を開始する',
+      description: 'POST /stories/{storyId}/revisions: 部分再生成（改訂・復旧）を開始する',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
         STATE_MACHINE_ARN: props.stateMachine.stateMachineArn,
@@ -121,6 +122,15 @@ export class NovelApi extends Construct {
     });
     props.storyTable.grantReadWriteData(startRevisionFn);
     props.stateMachine.grantStartExecution(startRevisionFn);
+    const stack = Stack.of(this);
+    startRevisionFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['states:DescribeExecution'],
+        resources: [
+          `arn:${stack.partition}:states:${stack.region}:${stack.account}:execution:*:*`,
+        ],
+      }),
+    );
 
     this.httpApi = new HttpApi(this, 'HttpApi', {
       description: '小説生成ワークフロー API',

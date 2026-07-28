@@ -8,7 +8,10 @@ import {
   SAMPLE_PLAN_CHARACTERS,
 } from './support/fakes';
 
-async function buildCompletedStory(repo: FakeStoryRepository): Promise<Story> {
+async function buildStoryWithPlan(
+  repo: FakeStoryRepository,
+  options?: { bindArn?: string; status?: 'COMPLETED' | 'AWAITING_FINAL_APPROVAL' },
+): Promise<Story> {
   const story = Story.submit({
     overview: 'o',
     theme: 't',
@@ -19,7 +22,14 @@ async function buildCompletedStory(repo: FakeStoryRepository): Promise<Story> {
     requireChapterApproval: false,
     length: 'short',
   });
-  story.complete('https://example.com/final.txt');
+  if (options?.status === 'AWAITING_FINAL_APPROVAL') {
+    story.moveTo('AWAITING_FINAL_APPROVAL');
+  } else {
+    story.complete('https://example.com/final.txt');
+  }
+  if (options?.bindArn) {
+    story.bindExecution(options.bindArn);
+  }
   await repo.createStory(story);
   await repo.savePlan(
     story.storyId,
@@ -38,10 +48,10 @@ async function buildCompletedStory(repo: FakeStoryRepository): Promise<Story> {
 }
 
 describe('StartRevisionUseCase', () => {
-  it('starts the workflow with revision fields and moves story to CHAPTERS_GENERATING', async () => {
+  it('starts the workflow with revision fields and binds executionArn', async () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
-    const story = await buildCompletedStory(repo);
+    const story = await buildStoryWithPlan(repo);
     const useCase = new StartRevisionUseCase(repo, starter);
 
     const output = await useCase.execute({
@@ -65,7 +75,63 @@ describe('StartRevisionUseCase', () => {
     expect(updated.executionArn).toBe(starter.nextExecutionArn);
   });
 
-  it('rejects when story is not COMPLETED', async () => {
+  it('allows recovery from AWAITING_FINAL_APPROVAL when no execution lock', async () => {
+    const repo = new FakeStoryRepository();
+    const starter = new FakeWorkflowStarter();
+    const story = await buildStoryWithPlan(repo, { status: 'AWAITING_FINAL_APPROVAL' });
+    const useCase = new StartRevisionUseCase(repo, starter);
+
+    const output = await useCase.execute({
+      storyId: story.storyId,
+      rewriteFromChapterIndex: 3,
+      feedback: 'Regenerate unfinished chapter',
+    });
+
+    expect(output.executionArn).toBe(starter.nextExecutionArn);
+    expect((await repo.getStory(story.storyId)).status).toBe('CHAPTERS_GENERATING');
+  });
+
+  it('rejects when a running execution lock is present', async () => {
+    const repo = new FakeStoryRepository();
+    const starter = new FakeWorkflowStarter();
+    const lockedArn = 'arn:aws:states:us-east-1:123:execution:novel:locked';
+    const story = await buildStoryWithPlan(repo, { bindArn: lockedArn });
+    starter.executionStatuses.set(lockedArn, 'RUNNING');
+    const useCase = new StartRevisionUseCase(repo, starter);
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        rewriteFromChapterIndex: 1,
+        feedback: 'redo',
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(starter.started).toHaveLength(0);
+  });
+
+  it('clears a stale lock and starts revision', async () => {
+    const repo = new FakeStoryRepository();
+    const starter = new FakeWorkflowStarter();
+    const staleArn = 'arn:aws:states:us-east-1:123:execution:novel:stale';
+    const story = await buildStoryWithPlan(repo, {
+      status: 'AWAITING_FINAL_APPROVAL',
+      bindArn: staleArn,
+    });
+    starter.executionStatuses.set(staleArn, 'FAILED');
+    starter.nextExecutionArn = 'arn:aws:states:us-east-1:123:execution:novel:new';
+    const useCase = new StartRevisionUseCase(repo, starter);
+
+    const output = await useCase.execute({
+      storyId: story.storyId,
+      rewriteFromChapterIndex: 2,
+      feedback: 'recover after finalize failure',
+    });
+
+    expect(output.executionArn).toBe(starter.nextExecutionArn);
+    expect((await repo.getStory(story.storyId)).executionArn).toBe(starter.nextExecutionArn);
+  });
+
+  it('rejects when plan is missing', async () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = Story.submit({
@@ -78,6 +144,7 @@ describe('StartRevisionUseCase', () => {
       requireChapterApproval: false,
       length: 'short',
     });
+    story.complete('https://example.com/final.txt');
     await repo.createStory(story);
     const useCase = new StartRevisionUseCase(repo, starter);
 
@@ -94,7 +161,7 @@ describe('StartRevisionUseCase', () => {
   it('rejects empty feedback', async () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
-    const story = await buildCompletedStory(repo);
+    const story = await buildStoryWithPlan(repo);
     const useCase = new StartRevisionUseCase(repo, starter);
 
     await expect(
@@ -110,7 +177,7 @@ describe('StartRevisionUseCase', () => {
   it('rejects rewriteFromChapterIndex beyond plan chapters', async () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
-    const story = await buildCompletedStory(repo);
+    const story = await buildStoryWithPlan(repo);
     const useCase = new StartRevisionUseCase(repo, starter);
 
     await expect(

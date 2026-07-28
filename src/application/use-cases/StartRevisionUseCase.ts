@@ -17,8 +17,9 @@ export interface StartRevisionOutput {
 }
 
 /**
- * 完成済み物語に対し、既存生成ワークフローを「最終拒否以降」から再実行する。
- * StartExecution 入力の rewriteFromChapterIndex / feedback により SM 入口で分岐する。
+ * 部分再生成ワークフローを開始する（完成後の改訂、および実行失敗後の復旧）。
+ * Story.executionArn がある間は実行中ロックとして拒否する。
+ * 終端なのに ARN が残っている場合は stale としてクリアしてから開始する。
  */
 export class StartRevisionUseCase {
   constructor(
@@ -39,13 +40,30 @@ export class StartRevisionUseCase {
     }
 
     const story = await this.storyRepository.getStory(input.storyId);
-    if (story.status !== 'COMPLETED') {
-      throw new ValidationError(
-        `Story ${input.storyId} must be COMPLETED to start a revision (current: ${story.status})`,
-      );
+
+    if (story.executionArn) {
+      let status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'ABORTED';
+      try {
+        status = await this.workflowStarter.getExecutionStatus(story.executionArn);
+      } catch {
+        // 実行が既に消えている等は stale ロックとして扱う
+        status = 'FAILED';
+      }
+      if (status === 'RUNNING') {
+        throw new ValidationError(
+          `Story ${input.storyId} already has a running workflow (${story.executionArn})`,
+        );
+      }
+      story.clearExecution();
+      await this.storyRepository.saveStory(story);
     }
 
-    const plan = await this.storyRepository.getPlan(input.storyId);
+    const plan = await this.storyRepository.findPlan(input.storyId);
+    if (!plan) {
+      throw new ValidationError(
+        `Story ${input.storyId} has no plan; cannot start a partial rewrite`,
+      );
+    }
     const maxIndex = Math.max(...plan.chapters.map((c) => c.index));
     if (input.rewriteFromChapterIndex > maxIndex) {
       throw new ValidationError(
@@ -59,8 +77,9 @@ export class StartRevisionUseCase {
       rewriteFromChapterIndex: input.rewriteFromChapterIndex,
     });
 
-    story.moveTo('CHAPTERS_GENERATING');
     story.bindExecution(executionArn);
+    story.clearApproval();
+    story.moveTo('CHAPTERS_GENERATING');
     await this.storyRepository.saveStory(story);
 
     return {

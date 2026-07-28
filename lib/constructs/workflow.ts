@@ -3,6 +3,8 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -120,6 +122,26 @@ export class NovelWorkflow extends Construct {
     props.storyTable.grantReadWriteData(preparePartialRewriteFn);
     props.contentBucket.grantReadWrite(preparePartialRewriteFn);
 
+    const bindExecutionFn = createHandlerFunction(this, 'BindExecutionFunction', {
+      entry: 'bindExecution.ts',
+      description: 'ワークフロー開始時に executionArn を Story に記録する',
+      timeout: Duration.seconds(15),
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+      },
+    });
+    props.storyTable.grantReadWriteData(bindExecutionFn);
+
+    const clearExecutionFn = createHandlerFunction(this, 'ClearExecutionFunction', {
+      entry: 'clearExecution.ts',
+      description: 'ワークフロー終端時に executionArn ロックを解放する',
+      timeout: Duration.seconds(15),
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+      },
+    });
+    props.storyTable.grantReadWriteData(clearExecutionFn);
+
     const finalizeNovelFn = createHandlerFunction(this, 'FinalizeNovelFunction', {
       entry: 'finalizeNovel.ts',
       description: '全章を結合して最終テキストを保存し、署名付きURLをメール通知する',
@@ -136,6 +158,7 @@ export class NovelWorkflow extends Construct {
     finalizeNovelFn.addToRolePolicy(sesSendStatement);
 
     this.stateMachine = this.buildStateMachine({
+      bindExecutionFn,
       generateMetadataFn,
       generatePlanFn,
       requestApprovalFn,
@@ -144,9 +167,23 @@ export class NovelWorkflow extends Construct {
       preparePartialRewriteFn,
       finalizeNovelFn,
     });
+
+    new events.Rule(this, 'ClearExecutionOnTerminal', {
+      description: 'Step Functions 実行終端で Story.executionArn ロックを解放する',
+      eventPattern: {
+        source: ['aws.states'],
+        detailType: ['Step Functions Execution Status Change'],
+        detail: {
+          status: ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'ABORTED'],
+          stateMachineArn: [this.stateMachine.stateMachineArn],
+        },
+      },
+      targets: [new targets.LambdaFunction(clearExecutionFn)],
+    });
   }
 
   private buildStateMachine(fns: {
+    bindExecutionFn: NodejsFunction;
     generateMetadataFn: NodejsFunction;
     generatePlanFn: NodejsFunction;
     requestApprovalFn: NodejsFunction;
@@ -156,6 +193,7 @@ export class NovelWorkflow extends Construct {
     finalizeNovelFn: NodejsFunction;
   }): sfn.StateMachine {
     const {
+      bindExecutionFn,
       generateMetadataFn,
       generatePlanFn,
       requestApprovalFn,
@@ -520,8 +558,18 @@ export class NovelWorkflow extends Construct {
       )
       .otherwise(generateMetadata);
 
-    unwrapPipeBatch.next(isRevision);
-    inputAlreadyObject.next(isRevision);
+    const bindExecution = new tasks.LambdaInvoke(this, 'BindExecution', {
+      lambdaFunction: bindExecutionFn,
+      payloadResponseOnly: true,
+      payload: sfn.TaskInput.fromObject({
+        storyId: sfn.JsonPath.stringAt('$.storyId'),
+        executionArn: sfn.JsonPath.stringAt('$$.Execution.Id'),
+      }),
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+    bindExecution.next(isRevision);
+    unwrapPipeBatch.next(bindExecution);
+    inputAlreadyObject.next(bindExecution);
 
     const normalizeInput = new sfn.Choice(this, 'NormalizeInput?')
       .when(sfn.Condition.isPresent('$[0].storyId'), unwrapPipeBatch)
