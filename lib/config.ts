@@ -8,12 +8,12 @@ export const appConfig = {
      * Converse API に渡す推論プロファイル ID（デフォルトは日本クロスリージョン）。
      * `BEDROCK_MODEL_ID` で上書き可能（再デプロイが必要）。
      */
-    modelId: process.env.BEDROCK_MODEL_ID ?? 'jp.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    modelId: process.env.BEDROCK_MODEL_ID ?? 'jp.anthropic.claude-sonnet-4-6',
     /**
      * IAM で許可する基盤モデル ID。
      * JP 推論プロファイルがルーティングする実体（東京・大阪）。
      */
-    foundationModelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+    foundationModelId: 'anthropic.claude-sonnet-4-6',
     /** JP プロファイルのルーティング先リージョン */
     foundationModelRegions: ['ap-northeast-1', 'ap-northeast-3'] as const,
     region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
