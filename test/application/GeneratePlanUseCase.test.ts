@@ -18,6 +18,7 @@ async function seedStoryWithMetadata(repo: FakeStoryRepository): Promise<string>
     requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
+    requireFinalApproval: true,
     length: 'short',
   });
   await repo.createStory(story);

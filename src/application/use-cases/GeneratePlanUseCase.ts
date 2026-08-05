@@ -18,6 +18,7 @@ export interface GeneratePlanOutput {
   /** 呼び出し側が次工程（承認待ちへ進むかスキップするか）を決めるためのフラグ。 */
   requirePlanApproval: boolean;
   requireChapterApproval: boolean;
+  requireFinalApproval: boolean;
 }
 
 /**
@@ -122,6 +123,7 @@ export class GeneratePlanUseCase {
       chapterIndexes: plan.chapters.map((outline) => outline.index),
       requirePlanApproval: story.request.requirePlanApproval,
       requireChapterApproval: story.request.requireChapterApproval,
+      requireFinalApproval: story.request.requireFinalApproval,
     };
   }
 }

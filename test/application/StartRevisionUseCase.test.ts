@@ -20,6 +20,7 @@ async function buildStoryWithPlan(
     requireMetadataApproval: false,
     requirePlanApproval: false,
     requireChapterApproval: false,
+    requireFinalApproval: true,
     length: 'short',
   });
   if (options?.status === 'AWAITING_FINAL_APPROVAL') {
@@ -142,6 +143,7 @@ describe('StartRevisionUseCase', () => {
       requireMetadataApproval: true,
       requirePlanApproval: true,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     story.complete('https://example.com/final.txt');

@@ -30,6 +30,11 @@ export interface StoryRequest {
   requirePlanApproval: boolean;
   /** 各章の承認を求めるか。デフォルト false。 */
   requireChapterApproval: boolean;
+  /**
+   * 最終原稿の承認を求めるか。
+   * 省略時は !requireChapterApproval（章承認オフなら最終承認オン、という従来挙動を維持）。
+   */
+  requireFinalApproval: boolean;
   /** 短編 / 中編。デフォルト short。 */
   length: StoryLength;
 }
@@ -62,13 +67,7 @@ export class Story {
     return new Story({
       storyId: StoryId.generate().toString(),
       status: 'SUBMITTED',
-      request: {
-        ...request,
-        requireMetadataApproval: request.requireMetadataApproval ?? true,
-        requirePlanApproval: request.requirePlanApproval ?? true,
-        requireChapterApproval: request.requireChapterApproval ?? false,
-        length: resolveStoryLength(request.length),
-      },
+      request: Story.normalizeRequest(request),
       createdAt: now,
       updatedAt: now,
     });
@@ -78,14 +77,21 @@ export class Story {
     const request = props.request ?? ({} as StoryRequest);
     return new Story({
       ...props,
-      request: {
-        ...request,
-        requireMetadataApproval: request.requireMetadataApproval ?? true,
-        requirePlanApproval: request.requirePlanApproval ?? true,
-        requireChapterApproval: request.requireChapterApproval ?? false,
-        length: resolveStoryLength(request.length),
-      },
+      request: Story.normalizeRequest(request),
     });
+  }
+
+  /** 承認フラグ・長さのデフォルトを正規化する。 */
+  private static normalizeRequest(request: StoryRequest): StoryRequest {
+    const requireChapterApproval = request.requireChapterApproval ?? false;
+    return {
+      ...request,
+      requireMetadataApproval: request.requireMetadataApproval ?? true,
+      requirePlanApproval: request.requirePlanApproval ?? true,
+      requireChapterApproval,
+      requireFinalApproval: request.requireFinalApproval ?? !requireChapterApproval,
+      length: resolveStoryLength(request.length),
+    };
   }
 
   private static validateRequest(request: StoryRequest): void {

@@ -15,6 +15,7 @@ describe('BindExecutionUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     await repo.createStory(story);
@@ -37,6 +38,7 @@ describe('BindExecutionUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     const arn = 'arn:aws:states:us-east-1:123:execution:novel:exec-1';
@@ -59,6 +61,7 @@ describe('BindExecutionUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     story.bindExecution('arn:aws:states:us-east-1:123:execution:novel:other');
@@ -85,6 +88,7 @@ describe('ClearExecutionUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     const arn = 'arn:aws:states:us-east-1:123:execution:novel:exec-1';
@@ -108,6 +112,7 @@ describe('ClearExecutionUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     const arn = 'arn:aws:states:us-east-1:123:execution:novel:exec-1';

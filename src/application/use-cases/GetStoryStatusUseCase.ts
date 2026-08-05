@@ -15,6 +15,7 @@ export interface StoryStatusOutput {
   requireMetadataApproval: boolean;
   requirePlanApproval: boolean;
   requireChapterApproval: boolean;
+  requireFinalApproval: boolean;
   length: StoryLength;
   taskStage?: ApprovalStage;
   currentChapterIndex?: number;
@@ -76,6 +77,7 @@ export class GetStoryStatusUseCase {
       requireMetadataApproval: story.request.requireMetadataApproval,
       requirePlanApproval: story.request.requirePlanApproval,
       requireChapterApproval: story.request.requireChapterApproval,
+      requireFinalApproval: story.request.requireFinalApproval,
       length: story.request.length,
       taskStage: story.taskStage,
       currentChapterIndex: story.currentChapterIndex,

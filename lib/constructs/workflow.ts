@@ -476,6 +476,7 @@ export class NovelWorkflow extends Construct {
         'feedback.$': '$.finalDecision.feedback',
         'rewriteFromChapterIndex.$': '$.finalDecision.rewriteFromChapterIndex',
         'requireChapterApproval.$': '$.plan.requireChapterApproval',
+        'requireFinalApproval.$': '$.plan.requireFinalApproval',
       },
     });
 
@@ -496,6 +497,7 @@ export class NovelWorkflow extends Construct {
         'rewrite.$': '$.rewrite',
         plan: {
           'requireChapterApproval.$': '$.rewrite.requireChapterApproval',
+          'requireFinalApproval.$': '$.rewrite.requireFinalApproval',
         },
       },
     });
@@ -520,7 +522,7 @@ export class NovelWorkflow extends Construct {
       .otherwise(generatePlan);
 
     const finalApprovalGate = new sfn.Choice(this, 'RequireFinalApproval?')
-      .when(sfn.Condition.booleanEquals('$.plan.requireChapterApproval', false), requestFinalApproval)
+      .when(sfn.Condition.booleanEquals('$.plan.requireFinalApproval', true), requestFinalApproval)
       .otherwise(finalize);
 
     const finalApprovedChoice = new sfn.Choice(this, 'FinalApproved?')

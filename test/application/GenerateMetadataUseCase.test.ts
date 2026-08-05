@@ -15,6 +15,7 @@ describe('GenerateMetadataUseCase', () => {
       requireMetadataApproval: true,
       requirePlanApproval: true,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     await repo.createStory(story);
@@ -32,6 +33,8 @@ describe('GenerateMetadataUseCase', () => {
     expect(capturedSetting).toBe('砂漠の都市国家');
     expect(result.requireMetadataApproval).toBe(true);
     expect(result.requirePlanApproval).toBe(true);
+    expect(result.requireChapterApproval).toBe(false);
+    expect(result.requireFinalApproval).toBe(true);
 
     const stored = await repo.getMetadata(story.storyId);
     expect(stored.theme).toBe('fake theme');
@@ -55,6 +58,7 @@ describe('GenerateMetadataUseCase', () => {
       requireMetadataApproval: true,
       requirePlanApproval: true,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     await repo.createStory(story);

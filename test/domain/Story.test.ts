@@ -10,6 +10,7 @@ describe('Story', () => {
     requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
+    requireFinalApproval: true,
     length: 'short' as const,
   };
 
@@ -21,7 +22,48 @@ describe('Story', () => {
     expect(story.request.requireMetadataApproval).toBe(true);
     expect(story.request.requirePlanApproval).toBe(true);
     expect(story.request.requireChapterApproval).toBe(false);
+    expect(story.request.requireFinalApproval).toBe(true);
     expect(story.request.length).toBe('short');
+  });
+
+  it('defaults requireFinalApproval to the inverse of requireChapterApproval on restore', () => {
+    const withChapter = Story.restore({
+      storyId: '00000000-0000-4000-8000-000000000001',
+      status: 'SUBMITTED',
+      request: {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: true,
+        requireFinalApproval: undefined as unknown as boolean,
+        length: 'short',
+      },
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    });
+    expect(withChapter.request.requireFinalApproval).toBe(false);
+
+    const withoutChapter = Story.restore({
+      storyId: '00000000-0000-4000-8000-000000000002',
+      status: 'SUBMITTED',
+      request: {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: undefined as unknown as boolean,
+        length: 'short',
+      },
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    });
+    expect(withoutChapter.request.requireFinalApproval).toBe(true);
   });
 
   it('tracks metadata approval wait state', () => {

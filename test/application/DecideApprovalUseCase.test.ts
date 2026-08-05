@@ -17,6 +17,7 @@ async function buildAwaitingStory(
     requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
+    requireFinalApproval: true,
     length: 'short',
   });
   story.awaitApproval(stage, 'task-token', chapterIndex);

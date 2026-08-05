@@ -25,6 +25,7 @@ describe('PreparePartialRewriteUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     const storyId = story.storyId;
@@ -154,6 +155,8 @@ describe('PreparePartialRewriteUseCase', () => {
     });
 
     expect(result.chapterIndexes).toEqual([2, 3]);
+    expect(result.requireChapterApproval).toBe(false);
+    expect(result.requireFinalApproval).toBe(true);
 
     const chapter1 = await repo.getChapter(storyId, 1);
     expect(chapter1.isDone()).toBe(true);

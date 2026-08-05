@@ -14,6 +14,7 @@ export interface GenerateMetadataOutput {
   requireMetadataApproval: boolean;
   requirePlanApproval: boolean;
   requireChapterApproval: boolean;
+  requireFinalApproval: boolean;
 }
 
 /**
@@ -69,6 +70,7 @@ export class GenerateMetadataUseCase {
       requireMetadataApproval: story.request.requireMetadataApproval,
       requirePlanApproval: story.request.requirePlanApproval,
       requireChapterApproval: story.request.requireChapterApproval,
+      requireFinalApproval: story.request.requireFinalApproval,
     };
   }
 }

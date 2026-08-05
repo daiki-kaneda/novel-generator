@@ -38,6 +38,7 @@ async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<vo
     requireMetadataApproval: true,
     requirePlanApproval: true,
     requireChapterApproval: false,
+    requireFinalApproval: true,
     length: 'short',
   });
   const restored = Story.restore({

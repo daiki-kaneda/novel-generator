@@ -23,6 +23,7 @@ describe('FinalizeNovelUseCase', () => {
       requireMetadataApproval: true,
       requirePlanApproval: true,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     await repo.createStory(story);
@@ -77,6 +78,7 @@ describe('FinalizeNovelUseCase', () => {
       requireMetadataApproval: true,
       requirePlanApproval: true,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     await repo.createStory(story);

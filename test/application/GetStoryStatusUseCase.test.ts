@@ -16,6 +16,7 @@ describe('GetStoryStatusUseCase', () => {
       requireMetadataApproval: true,
       requirePlanApproval: true,
       requireChapterApproval: false,
+      requireFinalApproval: true,
       length: 'short',
     });
     await repo.createStory(story);
@@ -73,6 +74,7 @@ describe('GetStoryStatusUseCase', () => {
     const status = await useCase.execute(story.storyId);
 
     expect(status.planSnapshots).toHaveLength(2);
+    expect(status.requireFinalApproval).toBe(true);
     expect(status.planSnapshots.map((s) => s.afterChapterIndex)).toEqual([0, 1]);
     expect(status.planSnapshots[0].trigger).toBe('initial');
     expect(status.planSnapshots[1].trigger).toBe('chapter_revision');

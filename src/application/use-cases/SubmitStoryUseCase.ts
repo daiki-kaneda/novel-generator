@@ -17,6 +17,11 @@ export interface SubmitStoryInput {
   requirePlanApproval?: boolean;
   /** 省略時は false。 */
   requireChapterApproval?: boolean;
+  /**
+   * 省略時は !requireChapterApproval。
+   * 評価バッチなど無承認完走では false を明示する。
+   */
+  requireFinalApproval?: boolean;
   /** 省略時は short。 */
   length?: StoryLength;
 }
@@ -33,6 +38,7 @@ export class SubmitStoryUseCase {
   ) {}
 
   async execute(input: SubmitStoryInput): Promise<SubmitStoryOutput> {
+    const requireChapterApproval = input.requireChapterApproval ?? false;
     const story = Story.submit({
       overview: input.overview,
       theme: input.theme,
@@ -42,7 +48,8 @@ export class SubmitStoryUseCase {
       userEmail: input.userEmail,
       requireMetadataApproval: input.requireMetadataApproval ?? true,
       requirePlanApproval: input.requirePlanApproval ?? true,
-      requireChapterApproval: input.requireChapterApproval ?? false,
+      requireChapterApproval,
+      requireFinalApproval: input.requireFinalApproval ?? !requireChapterApproval,
       length: resolveStoryLength(input.length),
     });
 

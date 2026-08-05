@@ -23,6 +23,7 @@ describe('SubmitStoryUseCase', () => {
     expect(stored.request.requireMetadataApproval).toBe(true);
     expect(stored.request.requirePlanApproval).toBe(true);
     expect(stored.request.requireChapterApproval).toBe(false);
+    expect(stored.request.requireFinalApproval).toBe(true);
     expect(stored.request.length).toBe('short');
   });
 
@@ -40,6 +41,7 @@ describe('SubmitStoryUseCase', () => {
       requireMetadataApproval: false,
       requirePlanApproval: false,
       requireChapterApproval: true,
+      requireFinalApproval: false,
       length: 'medium',
     });
 
@@ -48,6 +50,30 @@ describe('SubmitStoryUseCase', () => {
     expect(stored.request.requireMetadataApproval).toBe(false);
     expect(stored.request.requirePlanApproval).toBe(false);
     expect(stored.request.requireChapterApproval).toBe(true);
+    expect(stored.request.requireFinalApproval).toBe(false);
     expect(stored.request.length).toBe('medium');
+  });
+
+  it('allows all approvals off including final for batch evaluation', async () => {
+    const storyRepository = new FakeStoryRepository();
+    const requestQueue = new FakeRequestQueue();
+    const useCase = new SubmitStoryUseCase(storyRepository, requestQueue);
+
+    const result = await useCase.execute({
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      userEmail: 'user@example.com',
+      requireMetadataApproval: false,
+      requirePlanApproval: false,
+      requireChapterApproval: false,
+      requireFinalApproval: false,
+    });
+
+    const stored = await storyRepository.getStory(result.storyId);
+    expect(stored.request.requireMetadataApproval).toBe(false);
+    expect(stored.request.requirePlanApproval).toBe(false);
+    expect(stored.request.requireChapterApproval).toBe(false);
+    expect(stored.request.requireFinalApproval).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ export interface PreparePartialRewriteOutput {
   storyId: string;
   chapterIndexes: number[];
   requireChapterApproval: boolean;
+  requireFinalApproval: boolean;
   revisionFeedback: string;
 }
 
@@ -78,6 +79,7 @@ export class PreparePartialRewriteUseCase {
       storyId: input.storyId,
       chapterIndexes: rewriteIndexes,
       requireChapterApproval: story.request.requireChapterApproval,
+      requireFinalApproval: story.request.requireFinalApproval,
       revisionFeedback: input.feedback?.trim() ?? '',
     };
   }
