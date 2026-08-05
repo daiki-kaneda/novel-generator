@@ -2,7 +2,13 @@
 !jest.config.js
 *.d.ts
 node_modules
+.DS_Store
+.env
+.env.*
 
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Evaluation submit results (may contain storyIds / emails)
+eval/round1-submitted.json
