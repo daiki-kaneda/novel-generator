@@ -151,3 +151,8 @@ test/                Jest テスト
 * `npx cdk diff` — 差分確認
 * `npx cdk synth` — CloudFormation テンプレート生成
 
+## Samples
+
+生成結果のサンプルは [`docs/samples/hard-sf/`](docs/samples/hard-sf/) にあります。
+（`seed.json` / `generated_metadata.json` / `generated_plan.json` / `manuscript.txt`）
+
