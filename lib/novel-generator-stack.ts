@@ -4,6 +4,7 @@ import { NovelStorage } from './constructs/storage';
 import { NovelWorkflow } from './constructs/workflow';
 import { NovelIngestion } from './constructs/ingestion';
 import { NovelApi } from './constructs/api';
+import { NovelFrontend } from './constructs/frontend';
 import { appConfig } from './config';
 
 /**
@@ -11,6 +12,7 @@ import { appConfig } from './config';
  * 各コンストラクトは自身の依存先を明示的なpropsとして受け取り（CDKレベルでも依存性を
  * 注入する形にすることで）、ここでの組み立て順序がそのまま依存関係を表す。
  * 順序: Storage（DynamoDB+S3） → Workflow（Step Functions+Lambda） → Ingestion（SQS+Pipe） → Api（HTTP API+Lambda）
+ *       → Frontend（S3+CloudFront。事前に`npm run build:frontend`でReactアプリをビルドしておく必要がある）
  */
 export class NovelGeneratorStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -41,9 +43,17 @@ export class NovelGeneratorStack extends cdk.Stack {
       stateMachine: workflow.stateMachine,
     });
 
+    const frontend = new NovelFrontend(this, 'Frontend', {
+      apiEndpoint: api.httpApi.apiEndpoint,
+    });
+
     new cdk.CfnOutput(this, 'ApiUrl', {
       description: '物語の送信・状態確認・承認/拒否を行うHTTP APIのエンドポイント',
       value: api.httpApi.apiEndpoint,
+    });
+    new cdk.CfnOutput(this, 'FrontendUrl', {
+      description: 'Reactフロントエンドの配信URL（CloudFront）',
+      value: `https://${frontend.distribution.distributionDomainName}`,
     });
     new cdk.CfnOutput(this, 'StateMachineArn', {
       description: '短編小説生成ワークフローのStep Functions State Machine ARN',

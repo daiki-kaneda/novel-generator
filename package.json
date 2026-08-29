@@ -5,7 +5,10 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "build:frontend": "npm --prefix frontend ci && npm --prefix frontend run build",
+    "synth": "npm run build:frontend && cdk synth",
+    "deploy": "npm run build:frontend && cdk deploy"
   },
   "devDependencies": {
     "@types/jest": "^30",

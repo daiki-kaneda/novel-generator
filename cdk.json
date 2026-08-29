@@ -13,7 +13,9 @@
       "package*.json",
       "yarn.lock",
       "node_modules",
-      "test"
+      "test",
+      "frontend/node_modules",
+      "frontend/dist"
     ]
   },
   "context": {
