@@ -7,13 +7,15 @@ AWS 上で短編〜中編の日本語小説を生成するサーバーレスワ�
 ## Architecture
 
 ```
-HTTP API  →  SQS  →  EventBridge Pipe  →  Step Functions
-                                              │
-                     ┌────────────────────────┼────────────────────────┐
-                     ▼                        ▼                        ▼
-               Bedrock (生成)           DynamoDB (状態)            S3 (本文)
-                     │
-                     └─ SES（完成通知・任意）
+ブラウザ → CloudFront → S3（Reactの静的ホスティング）
+   │
+   └─ fetch (CORS) → HTTP API  →  SQS  →  EventBridge Pipe  →  Step Functions
+                                                            │
+                                   ┌────────────────────────┼────────────────────────┐
+                                   ▼                        ▼                        ▼
+                             Bedrock (生成)           DynamoDB (状態)            S3 (本文)
+                                   │
+                                   └─ SES（完成通知・任意）
 ```
 
 主なコンストラクト:
@@ -24,6 +26,7 @@ HTTP API  →  SQS  →  EventBridge Pipe  →  Step Functions
 | `NovelWorkflow` | Step Functions + 生成・承認・Finalize 用 Lambda |
 | `NovelIngestion` | 投稿キュー（SQS）と Pipe |
 | `NovelApi` | HTTP API（投稿・状態取得・承認・改訂） |
+| `NovelFrontend` | React SPA を配信する S3（非公開バケット）+ CloudFront |
 
 ### Step Functions workflow
 
@@ -101,6 +104,10 @@ NOTIFICATION_FROM_ADDRESS=you@example.com
 npx cdk deploy
 ```
 
+`cdk deploy`（および`cdk synth`）は`frontend/dist`が存在することを前提に`NovelFrontend`コンストラクトを
+組み立てます。`npm run deploy` / `npm run synth` を使うと、Reactアプリのビルド（`frontend/`で`npm ci && npm run build`）
+を自動的に先行実行します。直接`cdk deploy`を叩く場合は事前に `npm run build:frontend` を実行してください。
+
 環境変数でも上書きできます。
 
 | 変数 | 用途 |
@@ -109,7 +116,10 @@ npx cdk deploy
 | `NOTIFICATION_FROM_ADDRESS` | SES 送信元 |
 | `CDK_DEFAULT_REGION` / `CDK_DEFAULT_ACCOUNT` | デプロイ先（任意） |
 
-デプロイ後、スタック出力の `ApiUrl` と `StateMachineArn` を控えてください。
+デプロイ後、スタック出力の `ApiUrl`・`FrontendUrl`・`StateMachineArn` を控えてください。
+`FrontendUrl`（CloudFrontのドメイン）がReactフロントエンドの公開URLです。フロントエンドは
+`apiBaseUrl`を含む`config.json`をデプロイ時にランタイム設定として自動生成するため、API URLが
+変わってもフロントエンドの再ビルドは不要です（`cdk deploy`の再実行だけで反映されます）。
 
 ## Evaluation seeds
 
@@ -132,7 +142,8 @@ npx ts-node eval/submit-round1.ts
 
 ```
 bin/                 CDK アプリエントリ
-lib/                 CDK スタック / コンストラクト
+lib/                 CDK スタック / コンストラクト（Frontend含む）
+frontend/            React フロントエンド（Vite、独立したnpmパッケージ）
 src/application/     ユースケースとポート
 src/domain/          ドメインモデル
 src/infrastructure/  AWS SDK アダプタ（Bedrock / DynamoDB / S3 / SES / SFN / SQS）
@@ -147,9 +158,13 @@ test/                Jest テスト
 * `npm run build` — TypeScript コンパイル
 * `npm run watch` — 変更監視コンパイル
 * `npm test` — Jest
-* `npx cdk deploy` — デプロイ
+* `npm run build:frontend` — `frontend/`の依存インストール + Reactアプリのビルド
+* `npm run synth` — フロントエンドをビルドしてから `cdk synth`
+* `npm run deploy` — フロントエンドをビルドしてから `cdk deploy`
 * `npx cdk diff` — 差分確認
-* `npx cdk synth` — CloudFormation テンプレート生成
+
+フロントエンド単体の開発コマンド（`npm run dev`・`npm run test`・`npm run lint`）は
+[`frontend/README.md`](frontend/README.md) を参照してください。
 
 ## Samples
 
