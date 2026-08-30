@@ -46,6 +46,11 @@ export class NovelGeneratorStack extends cdk.Stack {
     const frontend = new NovelFrontend(this, 'Frontend', {
       apiEndpoint: api.httpApi.apiEndpoint,
     });
+    // Workflow は Frontend より先に作るため、配信URLは後付けで注入する（循環依存を避ける）。
+    workflow.requestApprovalFn.addEnvironment(
+      'FRONTEND_BASE_URL',
+      `https://${frontend.distribution.distributionDomainName}`,
+    );
 
     new cdk.CfnOutput(this, 'ApiUrl', {
       description: '物語の送信・状態確認・承認/拒否を行うHTTP APIのエンドポイント',

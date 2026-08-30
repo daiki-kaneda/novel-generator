@@ -128,7 +128,14 @@ export const container = {
         worldStateRepository(),
       ),
   ),
-  requestApprovalUseCase: lazy(() => new RequestApprovalUseCase(storyRepository())),
+  requestApprovalUseCase: lazy(
+    () =>
+      new RequestApprovalUseCase(
+        storyRepository(),
+        notificationSender(),
+        process.env.FRONTEND_BASE_URL,
+      ),
+  ),
   decideApprovalUseCase: lazy(
     () => new DecideApprovalUseCase(storyRepository(), approvalGateway()),
   ),
