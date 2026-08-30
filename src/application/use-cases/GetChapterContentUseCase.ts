@@ -11,12 +11,15 @@ export interface GetChapterContentOutput {
   storyId: string;
   chapterIndex: number;
   title: string;
+  /** アプリ内リーダー用の本文。S3をブラウザから直接読ませない。 */
+  content: string;
   contentUrl: string;
+  expiresInSeconds: number;
 }
 
 /**
- * 指定章の本文への署名付きURLを返す。
- * 章承認時にユーザーが本文を読んで判断するために使う。
+ * 指定章の本文と、任意の署名付きURLを返す。
+ * 本文はアプリ内リーダー向け。URLは別タブや保存用。
  */
 export class GetChapterContentUseCase {
   constructor(
@@ -39,16 +42,18 @@ export class GetChapterContentUseCase {
       );
     }
 
-    const contentUrl = await this.chapterContentStorage.createPresignedUrl(
-      chapter.s3Key,
-      this.urlExpirySeconds,
-    );
+    const [content, contentUrl] = await Promise.all([
+      this.chapterContentStorage.getChapterText(input.storyId, chapter.s3Key),
+      this.chapterContentStorage.createPresignedUrl(chapter.s3Key, this.urlExpirySeconds),
+    ]);
 
     return {
       storyId: input.storyId,
       chapterIndex: chapter.index,
       title: chapter.title,
+      content,
       contentUrl,
+      expiresInSeconds: this.urlExpirySeconds,
     };
   }
 }

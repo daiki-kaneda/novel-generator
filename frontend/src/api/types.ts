@@ -140,7 +140,9 @@ export interface ChapterContentOutput {
   storyId: string;
   chapterIndex: number;
   title: string;
+  content: string;
   contentUrl: string;
+  expiresInSeconds: number;
 }
 
 export interface FinalContentOutput {

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   decideChapterApproval,
   decideFinalApproval,
@@ -16,13 +17,21 @@ interface ApprovalPanelProps {
   chapterIndex?: number;
   /** stageが`final`のとき、部分再生成の開始章の選択肢として使う最大章番号。 */
   maxChapterIndex?: number;
+  /** 章承認待ちでリーダーへの導線を出すか。リーダー自身の上では出さない。 */
+  showReadLink?: boolean;
 }
 
 /**
  * 承認待ち（`AWAITING_*`）のときに表示する承認/拒否フォーム。
  * 4つの承認段階（metadata/plan/chapter/final）を1つのUIに統一する。
  */
-export function ApprovalPanel({ storyId, stage, chapterIndex, maxChapterIndex }: ApprovalPanelProps) {
+export function ApprovalPanel({
+  storyId,
+  stage,
+  chapterIndex,
+  maxChapterIndex,
+  showReadLink = true,
+}: ApprovalPanelProps) {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState('');
   const [rewriteFromChapterIndex, setRewriteFromChapterIndex] = useState<string>('');
@@ -56,6 +65,7 @@ export function ApprovalPanel({ storyId, stage, chapterIndex, maxChapterIndex }:
       setRewriteFromChapterIndex('');
       setMode('idle');
       void queryClient.invalidateQueries({ queryKey: ['story', storyId] });
+      void queryClient.invalidateQueries({ queryKey: ['chapter', storyId] });
     },
   });
 
@@ -64,6 +74,12 @@ export function ApprovalPanel({ storyId, stage, chapterIndex, maxChapterIndex }:
       <h3>{APPROVAL_STAGE_LABELS[stage]}の承認待ち</h3>
       <p className="approval-panel__hint">
         内容を確認し、問題なければ承認してください。修正が必要な場合は拒否して修正点を伝えると、フィードバックを反映して再生成されます。
+        {showReadLink && stage === 'chapter' && chapterIndex !== undefined && (
+          <>
+            {' '}
+            <Link to={`/stories/${storyId}/chapters/${chapterIndex}`}>この章を読む</Link>
+          </>
+        )}
       </p>
 
       {mode === 'idle' && (

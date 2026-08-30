@@ -32,7 +32,7 @@ src/
   api/            fetchクライアント・DTO型・ランタイム設定(config.json)読み込み
   hooks/          React Queryによる状態ポーリング、ローカル履歴(localStorage)
   components/     状態表示・承認フォーム・章一覧などのUIパーツ
-  pages/          投稿ページ / ステータス確認ページ
+  pages/          投稿ページ / ステータス確認ページ / 章本文リーダー
 ```
 
 ## 認証について

@@ -62,7 +62,7 @@ export class NovelApi extends Construct {
 
     const getChapterContentFn = createHandlerFunction(this, 'GetChapterContentFunction', {
       entry: 'getChapterContent.ts',
-      description: 'GET /stories/{storyId}/chapters/{chapterIndex}/content: 章本文URLを取得する',
+      description: 'GET /stories/{storyId}/chapters/{chapterIndex}/content: 章本文と署名付きURLを取得する',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
         CONTENT_BUCKET_NAME: props.contentBucket.bucketName,
