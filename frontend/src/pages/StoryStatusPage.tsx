@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { ApprovalPanel } from '../components/ApprovalPanel';
 import { FinalDownloadButton } from '../components/FinalDownloadButton';
+import { RevisionPanel } from '../components/RevisionPanel';
 import { ChapterList } from '../components/ChapterList';
 import { MetadataView } from '../components/MetadataView';
 import { PlanView } from '../components/PlanView';
@@ -103,7 +104,7 @@ export function StoryStatusPage() {
           <p className="approval-panel__hint">
             実行中ロックは解除済みです。
             {data.plan
-              ? ' 残っている設定書・プラン・章は下に表示されます。'
+              ? ' 残っている設定書・プラン・章は下に表示されます。指定章から再生成して復旧できます。'
               : ' 設定書またはプランの生成前に失敗したため、同じ内容で新規に送信し直してください。'}
           </p>
           {!data.plan && (
@@ -113,6 +114,12 @@ export function StoryStatusPage() {
           )}
         </div>
       )}
+
+      {(data.status === 'COMPLETED' || data.status === 'FAILED') &&
+        data.plan &&
+        data.plan.chapters.length > 0 && (
+          <RevisionPanel storyId={data.storyId} chapters={data.plan.chapters} />
+        )}
 
       {isAwaitingApproval(data.status) && data.taskStage && (
         <ApprovalPanel

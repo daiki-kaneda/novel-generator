@@ -479,7 +479,8 @@ a {
 }
 
 .approval-panel__reject-form textarea,
-.approval-panel__reject-form input {
+.approval-panel__reject-form input,
+.approval-panel__reject-form select {
   font: inherit;
   padding: 10px 12px;
   border-radius: 8px;
