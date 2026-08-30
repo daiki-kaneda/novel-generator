@@ -14,7 +14,10 @@ export type StoryStatus =
   | 'AWAITING_CHAPTER_APPROVAL'
   | 'AWAITING_FINAL_APPROVAL'
   | 'REVISING'
-  | 'COMPLETED';
+  | 'COMPLETED'
+  | 'FAILED';
+
+export type StoryFailureKind = 'FAILED' | 'TIMED_OUT' | 'ABORTED';
 
 export type ApprovalStage = 'metadata' | 'plan' | 'chapter' | 'final';
 export type ChapterStatus = 'PENDING' | 'DONE';
@@ -111,6 +114,8 @@ export interface StoryStatusOutput {
     summaryKeyPoints?: string;
   }>;
   finalUrl?: string;
+  failureKind?: StoryFailureKind;
+  failureReason?: string;
 }
 
 export interface SubmitStoryInput {

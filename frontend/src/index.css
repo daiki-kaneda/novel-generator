@@ -177,6 +177,11 @@ a {
   background: var(--accent-bg);
 }
 
+.card--danger {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
 .kv-list {
   display: grid;
   grid-template-columns: max-content 1fr;
@@ -312,6 +317,11 @@ a {
 .status-badge--done {
   background: var(--success-bg);
   color: var(--success);
+}
+
+.status-badge--failed {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 
 .status-badge__spinner {

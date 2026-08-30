@@ -8,8 +8,8 @@ const ACTIVE_POLL_INTERVAL_MS = 3_000;
 /** 承認待ちの間の更新間隔（人間の操作待ちなので緩める）。 */
 const AWAITING_POLL_INTERVAL_MS = 15_000;
 
-function pollIntervalFor(status: StoryStatus | undefined): number | false {
-  if (!status || status === 'COMPLETED') {
+export function pollIntervalFor(status: StoryStatus | undefined): number | false {
+  if (!status || status === 'COMPLETED' || status === 'FAILED') {
     return false;
   }
   if (status.startsWith('AWAITING_')) {

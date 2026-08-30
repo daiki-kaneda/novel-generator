@@ -81,4 +81,27 @@ describe('GetStoryStatusUseCase', () => {
     expect(status.planSnapshots[1].plan.summary).toBe('after chapter 1');
     expect(status.plan?.summary).toBe('current plan');
   });
+
+  it('exposes failureKind and failureReason when the story failed', async () => {
+    const repo = new FakeStoryRepository();
+    const story = Story.submit({
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      userEmail: 'user@example.com',
+      requireMetadataApproval: true,
+      requirePlanApproval: true,
+      requireChapterApproval: false,
+      requireFinalApproval: true,
+      length: 'short',
+    });
+    story.fail('FAILED', '生成ワークフローが失敗しました');
+    await repo.createStory(story);
+
+    const status = await new GetStoryStatusUseCase(repo).execute(story.storyId);
+
+    expect(status.status).toBe('FAILED');
+    expect(status.failureKind).toBe('FAILED');
+    expect(status.failureReason).toBe('生成ワークフローが失敗しました');
+  });
 });

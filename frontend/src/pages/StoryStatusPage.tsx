@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { ApprovalPanel } from '../components/ApprovalPanel';
 import { ChapterList } from '../components/ChapterList';
@@ -94,6 +94,24 @@ export function StoryStatusPage() {
           <a className="btn btn--primary" href={data.finalUrl} target="_blank" rel="noopener noreferrer">
             最終原稿をダウンロード
           </a>
+        </div>
+      )}
+
+      {data.status === 'FAILED' && (
+        <div className="card card--danger">
+          <h3>ワークフローが失敗しました</h3>
+          <p>{data.failureReason ?? '生成ワークフローが失敗しました'}</p>
+          <p className="approval-panel__hint">
+            実行中ロックは解除済みです。
+            {data.plan
+              ? ' 残っている設定書・プラン・章は下に表示されます。'
+              : ' 設定書またはプランの生成前に失敗したため、同じ内容で新規に送信し直してください。'}
+          </p>
+          {!data.plan && (
+            <Link to="/" className="btn btn--primary">
+              新しい物語を送信する
+            </Link>
+          )}
         </div>
       )}
 

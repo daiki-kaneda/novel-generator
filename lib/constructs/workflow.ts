@@ -169,7 +169,8 @@ export class NovelWorkflow extends Construct {
     });
 
     new events.Rule(this, 'ClearExecutionOnTerminal', {
-      description: 'Step Functions 実行終端で Story.executionArn ロックを解放する',
+      description:
+        'Step Functions 実行終端で Story.executionArn ロックを解放する。失敗終端では Story を FAILED にする',
       eventPattern: {
         source: ['aws.states'],
         detailType: ['Step Functions Execution Status Change'],
