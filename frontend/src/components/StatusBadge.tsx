@@ -1,9 +1,12 @@
 import type { StoryStatus } from '../api/types';
 import { isAwaitingApproval, isInProgress, STORY_STATUS_LABELS } from '../utils/statusLabels';
 
-function toneFor(status: StoryStatus): 'progress' | 'waiting' | 'done' {
+function toneFor(status: StoryStatus): 'progress' | 'waiting' | 'done' | 'failed' {
   if (status === 'COMPLETED') {
     return 'done';
+  }
+  if (status === 'FAILED') {
+    return 'failed';
   }
   if (isAwaitingApproval(status)) {
     return 'waiting';

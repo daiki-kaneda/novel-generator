@@ -13,7 +13,11 @@ export type StoryStatus =
   | 'AWAITING_CHAPTER_APPROVAL'
   | 'AWAITING_FINAL_APPROVAL'
   | 'REVISING'
-  | 'COMPLETED';
+  | 'COMPLETED'
+  | 'FAILED';
+
+/** Step Functions 実行の失敗終端。EventBridge の detail.status に対応する。 */
+export type StoryFailureKind = 'FAILED' | 'TIMED_OUT' | 'ABORTED';
 
 /** ユーザーが送信する物語生成リクエストの内容（シード）。設定書の正本ではない。 */
 export interface StoryRequest {
@@ -49,6 +53,10 @@ export interface StoryMetaProps {
   currentChapterIndex?: number;
   executionArn?: string;
   finalUrl?: string;
+  /** ワークフローが失敗終端したときの種別。成功・再実行後は未設定。 */
+  failureKind?: StoryFailureKind;
+  /** ユーザー向けの失敗理由。 */
+  failureReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -143,20 +151,50 @@ export class Story {
     return this.props.finalUrl;
   }
 
+  get failureKind(): StoryFailureKind | undefined {
+    return this.props.failureKind;
+  }
+
+  get failureReason(): string | undefined {
+    return this.props.failureReason;
+  }
+
   moveTo(status: StoryStatus): void {
+    if (status === 'FAILED') {
+      throw new ValidationError('Use Story.fail() to record a workflow failure');
+    }
     this.props.status = status;
+    this.clearFailureFields();
     this.touch();
   }
 
   /** 実行中ワークフローの ARN をロックとして記録する。 */
   bindExecution(executionArn: string): void {
     this.props.executionArn = executionArn;
+    this.clearFailureFields();
     this.touch();
   }
 
   /** ワークフロー終端後に実行中ロックを解除する。 */
   clearExecution(): void {
     this.props.executionArn = undefined;
+    this.touch();
+  }
+
+  /**
+   * ワークフロー失敗終端を記録する。無効になった承認トークンも捨てる。
+   * 実行中ロック（executionArn）は外さない。ロック解除は ClearExecutionUseCase の責務。
+   */
+  fail(kind: StoryFailureKind, reason: string): void {
+    if (this.props.status === 'COMPLETED') {
+      throw new ValidationError('A completed story cannot be marked as failed');
+    }
+    this.props.status = 'FAILED';
+    this.props.failureKind = kind;
+    this.props.failureReason = reason;
+    this.props.currentTaskToken = undefined;
+    this.props.taskStage = undefined;
+    this.props.currentChapterIndex = undefined;
     this.touch();
   }
 
@@ -194,7 +232,13 @@ export class Story {
   complete(finalUrl: string): void {
     this.props.finalUrl = finalUrl;
     this.props.status = 'COMPLETED';
+    this.clearFailureFields();
     this.touch();
+  }
+
+  private clearFailureFields(): void {
+    this.props.failureKind = undefined;
+    this.props.failureReason = undefined;
   }
 
   private touch(): void {

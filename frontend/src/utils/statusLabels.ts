@@ -11,6 +11,7 @@ export const STORY_STATUS_LABELS: Record<StoryStatus, string> = {
   AWAITING_FINAL_APPROVAL: '最終原稿の承認待ち',
   REVISING: '再生成中',
   COMPLETED: '完成',
+  FAILED: '失敗',
 };
 
 export const CHAPTER_STATUS_LABELS: Record<ChapterStatus, string> = {
@@ -29,6 +30,10 @@ export function isAwaitingApproval(status: StoryStatus): boolean {
   return status.startsWith('AWAITING_');
 }
 
+export function isTerminal(status: StoryStatus): boolean {
+  return status === 'COMPLETED' || status === 'FAILED';
+}
+
 export function isInProgress(status: StoryStatus): boolean {
-  return !isAwaitingApproval(status) && status !== 'COMPLETED';
+  return !isAwaitingApproval(status) && !isTerminal(status);
 }

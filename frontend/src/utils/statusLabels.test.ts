@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAwaitingApproval, isInProgress, STORY_STATUS_LABELS } from './statusLabels';
+import { isAwaitingApproval, isInProgress, isTerminal, STORY_STATUS_LABELS } from './statusLabels';
 
 describe('statusLabels', () => {
   it('has a Japanese label for every StoryStatus', () => {
@@ -14,6 +14,7 @@ describe('statusLabels', () => {
       'AWAITING_FINAL_APPROVAL',
       'REVISING',
       'COMPLETED',
+      'FAILED',
     ]);
   });
 
@@ -24,6 +25,7 @@ describe('statusLabels', () => {
     ['AWAITING_FINAL_APPROVAL', true],
     ['SUBMITTED', false],
     ['COMPLETED', false],
+    ['FAILED', false],
   ] as const)('isAwaitingApproval(%s) === %s', (status, expected) => {
     expect(isAwaitingApproval(status)).toBe(expected);
   });
@@ -34,7 +36,16 @@ describe('statusLabels', () => {
     ['CHAPTERS_GENERATING', true],
     ['AWAITING_METADATA_APPROVAL', false],
     ['COMPLETED', false],
+    ['FAILED', false],
   ] as const)('isInProgress(%s) === %s', (status, expected) => {
     expect(isInProgress(status)).toBe(expected);
+  });
+
+  it.each([
+    ['COMPLETED', true],
+    ['FAILED', true],
+    ['CHAPTERS_GENERATING', false],
+  ] as const)('isTerminal(%s) === %s', (status, expected) => {
+    expect(isTerminal(status)).toBe(expected);
   });
 });
