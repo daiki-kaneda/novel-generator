@@ -1,4 +1,5 @@
 import { container } from '../composition/container';
+import type { ExecutionTerminalStatus } from '../../application/use-cases/ClearExecutionUseCase';
 
 /**
  * Step Functions Execution Status Change (EventBridge) の detail 抜粋。
@@ -29,7 +30,14 @@ function extractStoryId(input?: string): string | undefined {
   }
 }
 
-/** ワークフロー終端時に executionArn ロックを解放する。 */
+function parseExecutionStatus(status: string | undefined): ExecutionTerminalStatus | undefined {
+  if (status === 'SUCCEEDED' || status === 'FAILED' || status === 'TIMED_OUT' || status === 'ABORTED') {
+    return status;
+  }
+  return undefined;
+}
+
+/** ワークフロー終端時に executionArn ロックを解放し、失敗終端なら Story を FAILED にする。 */
 export const handler = async (
   event: EventBridgeSfnStatusChangeEvent,
 ): Promise<{ storyId: string; cleared: boolean } | { skipped: true; reason: string }> => {
@@ -42,5 +50,6 @@ export const handler = async (
   return container.clearExecutionUseCase().execute({
     storyId,
     executionArn: detail.executionArn,
+    executionStatus: parseExecutionStatus(detail.status),
   });
 };

@@ -1,4 +1,4 @@
-import { StoryStatus } from '../../domain/entities/Story';
+import { StoryFailureKind, StoryStatus } from '../../domain/entities/Story';
 import { ChapterOutline, ChapterStatus } from '../../domain/entities/Chapter';
 import {
   CharacterProfile,
@@ -58,6 +58,8 @@ export interface StoryStatusOutput {
     summaryKeyPoints?: string;
   }>;
   finalUrl?: string;
+  failureKind?: StoryFailureKind;
+  failureReason?: string;
 }
 
 /** 物語の現在の進行状況（メタデータ・プラン・各章の状態・最終URL）を取得する。 */
@@ -120,6 +122,8 @@ export class GetStoryStatusUseCase {
         summaryKeyPoints: chapter.summaryKeyPoints,
       })),
       finalUrl: story.finalUrl,
+      failureKind: story.failureKind,
+      failureReason: story.failureReason,
     };
   }
 }

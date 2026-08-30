@@ -119,4 +119,47 @@ describe('Story', () => {
     expect(story.status).toBe('COMPLETED');
     expect(story.finalUrl).toBe('https://example.com/final.txt');
   });
+
+  it('records a workflow failure and clears a stale approval token', () => {
+    const story = Story.submit(validRequest);
+    story.bindExecution('arn:aws:states:us-east-1:123:execution:novel:exec-1');
+    story.awaitApproval('plan', 'stale-token');
+
+    story.fail('TIMED_OUT', 'タイムアウトしました。承認待ちが長すぎたか、生成が時間切れです');
+
+    expect(story.status).toBe('FAILED');
+    expect(story.failureKind).toBe('TIMED_OUT');
+    expect(story.failureReason).toContain('タイムアウト');
+    expect(story.currentTaskToken).toBeUndefined();
+    expect(story.taskStage).toBeUndefined();
+    expect(story.executionArn).toBe('arn:aws:states:us-east-1:123:execution:novel:exec-1');
+  });
+
+  it('does not allow marking a completed story as failed', () => {
+    const story = Story.submit(validRequest);
+    story.complete('https://example.com/final.txt');
+
+    expect(() => story.fail('FAILED', '生成ワークフローが失敗しました')).toThrow(ValidationError);
+    expect(story.status).toBe('COMPLETED');
+  });
+
+  it('clears failure fields when moving to a new status or binding a new execution', () => {
+    const story = Story.submit(validRequest);
+    story.fail('FAILED', '生成ワークフローが失敗しました');
+
+    story.moveTo('CHAPTERS_GENERATING');
+    expect(story.status).toBe('CHAPTERS_GENERATING');
+    expect(story.failureKind).toBeUndefined();
+    expect(story.failureReason).toBeUndefined();
+
+    story.fail('ABORTED', '実行が中断されました');
+    story.bindExecution('arn:aws:states:us-east-1:123:execution:novel:retry');
+    expect(story.failureKind).toBeUndefined();
+    expect(story.failureReason).toBeUndefined();
+  });
+
+  it('rejects moveTo(FAILED) so failures go through fail()', () => {
+    const story = Story.submit(validRequest);
+    expect(() => story.moveTo('FAILED')).toThrow(ValidationError);
+  });
 });
