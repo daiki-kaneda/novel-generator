@@ -36,8 +36,10 @@ describe('GetChapterContentUseCase', () => {
     const result = await useCase.execute({ storyId: story.storyId, chapterIndex: 1 });
 
     expect(result.title).toBe('Chapter 1');
+    expect(result.content).toBe('chapter body');
     expect(result.contentUrl).toContain(s3Key);
     expect(result.contentUrl).toContain('expires=3600');
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it('throws NotFoundError when the chapter has no content yet', async () => {

@@ -37,6 +37,7 @@ export function RevisionPanel({ storyId, chapters }: RevisionPanelProps) {
       setConfirming(false);
       setOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['story', storyId] });
+      void queryClient.invalidateQueries({ queryKey: ['chapter', storyId] });
     },
   });
 

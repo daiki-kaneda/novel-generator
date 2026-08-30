@@ -539,6 +539,49 @@ a {
   font-family: var(--mono);
 }
 
+.chapter-reader__nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.chapter-reader__neighbors {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chapter-reader__article {
+  max-width: 40rem;
+  margin: 0 auto 24px;
+}
+
+.chapter-reader__kicker {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.chapter-reader__body {
+  white-space: pre-wrap;
+  line-height: 1.95;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  margin-top: 16px;
+}
+
+.chapter-reader__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
 .boot-error {
   max-width: 640px;
   margin: 60px auto;

@@ -1,32 +1,6 @@
-import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
-import { getChapterContent } from '../api/client';
+import { Link } from 'react-router-dom';
 import type { StoryStatusOutput } from '../api/types';
 import { CHAPTER_STATUS_LABELS } from '../utils/statusLabels';
-
-function ChapterContentLink({ storyId, chapterIndex }: { storyId: string; chapterIndex: number }) {
-  const [error, setError] = useState<string | undefined>(undefined);
-
-  const mutation = useMutation({
-    mutationFn: () => getChapterContent(storyId, chapterIndex),
-    onSuccess: (data) => {
-      setError(undefined);
-      window.open(data.contentUrl, '_blank', 'noopener,noreferrer');
-    },
-    onError: (err: unknown) => {
-      setError(err instanceof Error ? err.message : '本文の取得に失敗しました');
-    },
-  });
-
-  return (
-    <div className="chapter-list__actions">
-      <button type="button" className="btn btn--secondary" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-        {mutation.isPending ? '取得中…' : '本文を読む'}
-      </button>
-      {error && <p className="field-error">{error}</p>}
-    </div>
-  );
-}
 
 export function ChapterList({
   storyId,
@@ -58,7 +32,13 @@ export function ChapterList({
               </span>
             </div>
             {chapter.summaryKeyPoints && <p className="chapter-list__summary">{chapter.summaryKeyPoints}</p>}
-            {chapter.status === 'DONE' && <ChapterContentLink storyId={storyId} chapterIndex={chapter.index} />}
+            {chapter.status === 'DONE' && (
+              <div className="chapter-list__actions">
+                <Link to={`/stories/${storyId}/chapters/${chapter.index}`} className="btn btn--secondary btn--small">
+                  本文を読む
+                </Link>
+              </div>
+            )}
           </li>
         ))}
       </ul>

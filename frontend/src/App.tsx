@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { SubmitStoryPage } from './pages/SubmitStoryPage';
 import { StoryStatusPage } from './pages/StoryStatusPage';
+import { ChapterReaderPage } from './pages/ChapterReaderPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +27,7 @@ function App() {
             <Routes>
               <Route path="/" element={<SubmitStoryPage />} />
               <Route path="/stories/:storyId" element={<StoryStatusPage />} />
+              <Route path="/stories/:storyId/chapters/:chapterIndex" element={<ChapterReaderPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

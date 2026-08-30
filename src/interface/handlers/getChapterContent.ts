@@ -2,7 +2,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { container } from '../composition/container';
 import { jsonResponse, errorResponse } from './support/httpResponse';
 
-/** GET /stories/{storyId}/chapters/{chapterIndex}/content: 章本文の署名付きURLを取得する。 */
+/** GET /stories/{storyId}/chapters/{chapterIndex}/content: 章本文と署名付きURLを取得する。 */
 export const handler = async (
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> => {
