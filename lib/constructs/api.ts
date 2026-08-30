@@ -72,6 +72,18 @@ export class NovelApi extends Construct {
     props.storyTable.grantReadData(getChapterContentFn);
     props.contentBucket.grantRead(getChapterContentFn);
 
+    const getFinalContentFn = createHandlerFunction(this, 'GetFinalContentFunction', {
+      entry: 'getFinalContent.ts',
+      description: 'GET /stories/{storyId}/final/content: 完成原稿の署名付きURLを再発行する',
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+        CONTENT_BUCKET_NAME: props.contentBucket.bucketName,
+        FINAL_URL_EXPIRY_SECONDS: String(props.finalUrlExpirySeconds),
+      },
+    });
+    props.storyTable.grantReadData(getFinalContentFn);
+    props.contentBucket.grantRead(getFinalContentFn);
+
     const metadataDecisionFn = createHandlerFunction(this, 'MetadataDecisionFunction', {
       entry: 'metadataDecision.ts',
       description: 'POST /stories/{storyId}/metadata/decision: メタデータ（設定書）の承認/拒否',
@@ -155,6 +167,11 @@ export class NovelApi extends Construct {
       path: '/stories/{storyId}/chapters/{chapterIndex}/content',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetChapterContentIntegration', getChapterContentFn),
+    });
+    this.httpApi.addRoutes({
+      path: '/stories/{storyId}/final/content',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('GetFinalContentIntegration', getFinalContentFn),
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/metadata/decision',

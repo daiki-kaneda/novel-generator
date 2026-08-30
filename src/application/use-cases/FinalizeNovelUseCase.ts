@@ -45,7 +45,7 @@ export class FinalizeNovelUseCase {
       this.finalUrlExpirySeconds,
     );
 
-    story.complete(finalUrl);
+    story.complete(finalKey);
     await this.storyRepository.saveStory(story);
 
     await this.notificationSender.sendCompletionEmail(story.request.userEmail, story.storyId, finalUrl);

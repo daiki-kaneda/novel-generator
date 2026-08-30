@@ -168,7 +168,7 @@ describe('ClearExecutionUseCase', () => {
     const story = submitStory();
     const arn = 'arn:aws:states:us-east-1:123:execution:novel:exec-1';
     story.bindExecution(arn);
-    story.complete('https://example.com/final.txt');
+    story.complete(`stories/${story.storyId}/final.txt`);
     await repo.createStory(story);
 
     const useCase = new ClearExecutionUseCase(repo);

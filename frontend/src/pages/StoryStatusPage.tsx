@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { ApprovalPanel } from '../components/ApprovalPanel';
+import { FinalDownloadButton } from '../components/FinalDownloadButton';
 import { ChapterList } from '../components/ChapterList';
 import { MetadataView } from '../components/MetadataView';
 import { PlanView } from '../components/PlanView';
@@ -87,13 +88,11 @@ export function StoryStatusPage() {
         </dl>
       </div>
 
-      {data.status === 'COMPLETED' && data.finalUrl && (
+      {data.status === 'COMPLETED' && (
         <div className="card card--highlight">
           <h3>完成しました</h3>
-          <p>最終原稿をダウンロードできます（署名付きURLには有効期限があります）。</p>
-          <a className="btn btn--primary" href={data.finalUrl} target="_blank" rel="noopener noreferrer">
-            最終原稿をダウンロード
-          </a>
+          <p>最終原稿をダウンロードできます。リンクは都度発行するため、期限切れになってもここから再取得できます。</p>
+          <FinalDownloadButton storyId={data.storyId} />
         </div>
       )}
 

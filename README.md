@@ -61,6 +61,7 @@ AWS 上で短編〜中編の日本語小説を生成するサーバーレスワ�
 | `POST` | `/stories` | 物語を投稿しワークフロー開始 |
 | `GET` | `/stories/{storyId}` | 進行状況・設定書・プラン・章一覧 |
 | `GET` | `/stories/{storyId}/chapters/{chapterIndex}/content` | 章本文の署名付き URL |
+| `GET` | `/stories/{storyId}/final/content` | 完成原稿の署名付き URL（都度再発行） |
 | `POST` | `/stories/{storyId}/metadata/decision` | 設定書の承認/拒否 |
 | `POST` | `/stories/{storyId}/plan/decision` | プランの承認/拒否 |
 | `POST` | `/stories/{storyId}/chapters/{chapterIndex}/decision` | 章の承認/拒否 |

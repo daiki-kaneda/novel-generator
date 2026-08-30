@@ -26,7 +26,7 @@ async function buildStoryWithPlan(
   if (options?.status === 'AWAITING_FINAL_APPROVAL') {
     story.moveTo('AWAITING_FINAL_APPROVAL');
   } else {
-    story.complete('https://example.com/final.txt');
+    story.complete(`stories/${story.storyId}/final.txt`);
   }
   if (options?.bindArn) {
     story.bindExecution(options.bindArn);
@@ -146,7 +146,7 @@ describe('StartRevisionUseCase', () => {
       requireFinalApproval: true,
       length: 'short',
     });
-    story.complete('https://example.com/final.txt');
+    story.complete(`stories/${story.storyId}/final.txt`);
     await repo.createStory(story);
     const useCase = new StartRevisionUseCase(repo, starter);
 
