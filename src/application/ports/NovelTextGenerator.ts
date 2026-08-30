@@ -8,10 +8,12 @@ import {
 import { AtomicFact, WorldEntity } from '../../domain/entities/WorldState';
 import { StoryLength } from '../../domain/value-objects/StoryLength';
 
-/** LLM 呼び出しの構造化ログ・追跡用に付与する相関コンテキスト。 */
+/** LLM 呼び出しの構造化ログ・追跡・使用量記録用に付与する相関コンテキスト。 */
 export interface LlmCallContext {
   storyId: string;
   chapterIndex?: number;
+  /** 使用量記録のアカウントキー。省略時はコスト記録をスキップする（記録はベストエフォート）。 */
+  userEmail?: string;
 }
 
 export interface GenerateMetadataInput {

@@ -1,9 +1,10 @@
 import { StartRevisionUseCase } from '../../src/application/use-cases/StartRevisionUseCase';
 import { Plan } from '../../src/domain/entities/Plan';
 import { Story } from '../../src/domain/entities/Story';
-import { ValidationError } from '../../src/domain/errors/DomainErrors';
+import { BudgetExceededError, ValidationError } from '../../src/domain/errors/DomainErrors';
 import {
   FakeStoryRepository,
+  FakeUsageAccountRepository,
   FakeWorkflowStarter,
   SAMPLE_PLAN_CHARACTERS,
 } from './support/fakes';
@@ -53,9 +54,9 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo);
-    const useCase = new StartRevisionUseCase(repo, starter);
+  const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
-    const output = await useCase.execute({
+  const output = await useCase.execute({
       storyId: story.storyId,
       rewriteFromChapterIndex: 2,
       feedback: 'Fix the middle act',
@@ -80,7 +81,7 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo, { status: 'AWAITING_FINAL_APPROVAL' });
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     const output = await useCase.execute({
       storyId: story.storyId,
@@ -98,7 +99,7 @@ describe('StartRevisionUseCase', () => {
     const lockedArn = 'arn:aws:states:us-east-1:123:execution:novel:locked';
     const story = await buildStoryWithPlan(repo, { bindArn: lockedArn });
     starter.executionStatuses.set(lockedArn, 'RUNNING');
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
@@ -120,7 +121,7 @@ describe('StartRevisionUseCase', () => {
     });
     starter.executionStatuses.set(staleArn, 'FAILED');
     starter.nextExecutionArn = 'arn:aws:states:us-east-1:123:execution:novel:new';
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     const output = await useCase.execute({
       storyId: story.storyId,
@@ -148,7 +149,7 @@ describe('StartRevisionUseCase', () => {
     });
     story.complete(`stories/${story.storyId}/final.txt`);
     await repo.createStory(story);
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
@@ -164,7 +165,7 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo);
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
@@ -180,7 +181,7 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo);
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
@@ -189,6 +190,24 @@ describe('StartRevisionUseCase', () => {
         feedback: 'too far',
       }),
     ).rejects.toBeInstanceOf(ValidationError);
+    expect(starter.started).toHaveLength(0);
+  });
+
+  it('rejects when the story owner has exhausted their monthly usage budget', async () => {
+    const repo = new FakeStoryRepository();
+    const starter = new FakeWorkflowStarter();
+    const usageAccountRepository = new FakeUsageAccountRepository();
+    const story = await buildStoryWithPlan(repo);
+    usageAccountRepository.seedCurrentMonthUsage(story.request.userEmail, { totalCostUsd: 2 });
+    const useCase = new StartRevisionUseCase(repo, starter, usageAccountRepository);
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        rewriteFromChapterIndex: 1,
+        feedback: 'redo',
+      }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
     expect(starter.started).toHaveLength(0);
   });
 });

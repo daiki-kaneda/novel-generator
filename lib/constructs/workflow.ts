@@ -13,6 +13,7 @@ import { createHandlerFunction } from './nodeFunction';
 
 export interface NovelWorkflowProps {
   storyTable: dynamodb.ITable;
+  usageTable: dynamodb.ITable;
   contentBucket: s3.IBucket;
   /** Bedrock Converse に渡す推論プロファイル / モデル ID */
   bedrockModelId: string;
@@ -58,10 +59,12 @@ export class NovelWorkflow extends Construct {
       timeout: Duration.seconds(90),
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         BEDROCK_MODEL_ID: props.bedrockModelId,
       },
     });
     props.storyTable.grantReadWriteData(generateMetadataFn);
+    props.usageTable.grantWriteData(generateMetadataFn);
     generateMetadataFn.addToRolePolicy(bedrockInvokeStatement);
 
     const generatePlanFn = createHandlerFunction(this, 'GeneratePlanFunction', {
@@ -70,10 +73,12 @@ export class NovelWorkflow extends Construct {
       timeout: Duration.seconds(120),
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         BEDROCK_MODEL_ID: props.bedrockModelId,
       },
     });
     props.storyTable.grantReadWriteData(generatePlanFn);
+    props.usageTable.grantWriteData(generatePlanFn);
     generatePlanFn.addToRolePolicy(bedrockInvokeStatement);
 
     this.requestApprovalFn = createHandlerFunction(this, 'RequestApprovalFunction', {
@@ -94,11 +99,13 @@ export class NovelWorkflow extends Construct {
       memorySize: 1024,
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         CONTENT_BUCKET_NAME: props.contentBucket.bucketName,
         BEDROCK_MODEL_ID: props.bedrockModelId,
       },
     });
     props.storyTable.grantReadWriteData(generateChapterFn);
+    props.usageTable.grantWriteData(generateChapterFn);
     props.contentBucket.grantReadWrite(generateChapterFn);
     generateChapterFn.addToRolePolicy(bedrockInvokeStatement);
 

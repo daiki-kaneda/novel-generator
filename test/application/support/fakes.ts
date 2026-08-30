@@ -40,6 +40,12 @@ import {
 import { NotFoundError } from '../../../src/domain/errors/DomainErrors';
 import { ApprovalDecision } from '../../../src/domain/value-objects/ApprovalDecision';
 import { StoryLength } from '../../../src/domain/value-objects/StoryLength';
+import { PlanTier } from '../../../src/domain/value-objects/UsagePlan';
+import {
+  MonthlyUsage,
+  RecordUsageInput,
+  UsageAccountRepository,
+} from '../../../src/application/ports/UsageAccountRepository';
 
 export const SAMPLE_PLAN_CHARACTERS: CharacterProfile[] = [
   {
@@ -442,6 +448,51 @@ export class FakeRequestQueue implements RequestQueue {
 
   async enqueueStoryRequest(storyId: string): Promise<void> {
     this.enqueued.push(storyId);
+  }
+}
+
+export class FakeUsageAccountRepository implements UsageAccountRepository {
+  /** メールアドレス（正規化なしのまま）→ プラン。未設定は 'free'。 */
+  planTiers = new Map<string, PlanTier>();
+  /** メールアドレス → yearMonth → 集計。テストから直接シードできるようにpublicにする。 */
+  monthlyUsage = new Map<string, Map<string, MonthlyUsage>>();
+  readonly recordedUsage: Array<{ userEmail: string; input: RecordUsageInput }> = [];
+
+  async getPlanTier(userEmail: string): Promise<PlanTier> {
+    return this.planTiers.get(userEmail) ?? 'free';
+  }
+
+  async getMonthlyUsage(userEmail: string, yearMonth: string): Promise<MonthlyUsage> {
+    const usage = this.monthlyUsage.get(userEmail)?.get(yearMonth);
+    return usage ?? { yearMonth, totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0 };
+  }
+
+  async recordUsage(userEmail: string, input: RecordUsageInput): Promise<void> {
+    this.recordedUsage.push({ userEmail, input });
+    const byMonth = this.monthlyUsage.get(userEmail) ?? new Map<string, MonthlyUsage>();
+    const yearMonth = new Date().toISOString().slice(0, 7);
+    const existing =
+      byMonth.get(yearMonth) ?? { yearMonth, totalCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0 };
+    byMonth.set(yearMonth, {
+      yearMonth,
+      totalCostUsd: existing.totalCostUsd + input.costUsd,
+      totalInputTokens: existing.totalInputTokens + input.inputTokens,
+      totalOutputTokens: existing.totalOutputTokens + input.outputTokens,
+    });
+    this.monthlyUsage.set(userEmail, byMonth);
+  }
+
+  /** テストから当月分の使用量を直接シードするヘルパー。 */
+  seedCurrentMonthUsage(userEmail: string, usage: Partial<MonthlyUsage>): void {
+    const yearMonth = new Date().toISOString().slice(0, 7);
+    const byMonth = this.monthlyUsage.get(userEmail) ?? new Map<string, MonthlyUsage>();
+    byMonth.set(yearMonth, {
+      yearMonth,
+      totalCostUsd: usage.totalCostUsd ?? 0,
+      totalInputTokens: usage.totalInputTokens ?? 0,
+      totalOutputTokens: usage.totalOutputTokens ?? 0,
+    });
+    this.monthlyUsage.set(userEmail, byMonth);
   }
 }
 

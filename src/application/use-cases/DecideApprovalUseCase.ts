@@ -2,6 +2,8 @@ import { ApprovalDecision, ApprovalStage } from '../../domain/value-objects/Appr
 import { ValidationError } from '../../domain/errors/DomainErrors';
 import { StoryRepository } from '../ports/StoryRepository';
 import { ApprovalGateway } from '../ports/ApprovalGateway';
+import { UsageAccountRepository } from '../ports/UsageAccountRepository';
+import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface DecideApprovalInput {
   storyId: string;
@@ -27,6 +29,7 @@ export class DecideApprovalUseCase {
   constructor(
     private readonly storyRepository: StoryRepository,
     private readonly approvalGateway: ApprovalGateway,
+    private readonly usageAccountRepository: UsageAccountRepository,
   ) {}
 
   async execute(input: DecideApprovalInput): Promise<void> {
@@ -37,6 +40,9 @@ export class DecideApprovalUseCase {
         `Story ${input.storyId} is not currently awaiting a "${input.expectedStage}" approval decision`,
       );
     }
+
+    // 承認・拒否のいずれも次工程の生成（追加コスト）につながるため、決定送信前に予算を確認する。
+    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     if (input.expectedStage === 'chapter') {
       if (input.chapterIndex === undefined) {

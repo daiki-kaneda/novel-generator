@@ -10,6 +10,7 @@ import { createHandlerFunction } from './nodeFunction';
 
 export interface NovelApiProps {
   storyTable: dynamodb.ITable;
+  usageTable: dynamodb.ITable;
   contentBucket: s3.IBucket;
   storyRequestQueueUrl: string;
   storyRequestQueueArn: string;
@@ -40,10 +41,12 @@ export class NovelApi extends Construct {
       description: 'POST /stories: 物語の概要・テーマ・登場人物を受け付ける',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         STORY_REQUEST_QUEUE_URL: props.storyRequestQueueUrl,
       },
     });
     props.storyTable.grantReadWriteData(submitStoryFn);
+    props.usageTable.grantReadData(submitStoryFn);
     submitStoryFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['sqs:SendMessage'],
@@ -89,9 +92,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/metadata/decision: メタデータ（設定書）の承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(metadataDecisionFn);
+    props.usageTable.grantReadData(metadataDecisionFn);
     metadataDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const planDecisionFn = createHandlerFunction(this, 'PlanDecisionFunction', {
@@ -99,9 +104,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/plan/decision: プランの承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(planDecisionFn);
+    props.usageTable.grantReadData(planDecisionFn);
     planDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const chapterDecisionFn = createHandlerFunction(this, 'ChapterDecisionFunction', {
@@ -109,9 +116,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/chapters/{chapterIndex}/decision: 章の承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(chapterDecisionFn);
+    props.usageTable.grantReadData(chapterDecisionFn);
     chapterDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const finalDecisionFn = createHandlerFunction(this, 'FinalDecisionFunction', {
@@ -119,9 +128,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/final/decision: 最終原稿の承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(finalDecisionFn);
+    props.usageTable.grantReadData(finalDecisionFn);
     finalDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const startRevisionFn = createHandlerFunction(this, 'StartRevisionFunction', {
@@ -129,10 +140,12 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/revisions: 部分再生成（改訂・復旧）を開始する',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         STATE_MACHINE_ARN: props.stateMachine.stateMachineArn,
       },
     });
     props.storyTable.grantReadWriteData(startRevisionFn);
+    props.usageTable.grantReadData(startRevisionFn);
     props.stateMachine.grantStartExecution(startRevisionFn);
     const stack = Stack.of(this);
     startRevisionFn.addToRolePolicy(

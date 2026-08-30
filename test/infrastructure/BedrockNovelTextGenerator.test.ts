@@ -3,15 +3,19 @@ import {
   BedrockConverseLogEvent,
   BedrockNovelTextGenerator,
 } from '../../src/infrastructure/bedrock/BedrockNovelTextGenerator';
+import { RecordUsageInput, UsageRecorder } from '../../src/application/ports/UsageAccountRepository';
 
 describe('BedrockNovelTextGenerator structured logging', () => {
   const modelId = 'test-model-id';
 
-  function createGenerator(sendImpl: BedrockRuntimeClient['send']): BedrockNovelTextGenerator {
+  function createGenerator(
+    sendImpl: BedrockRuntimeClient['send'],
+    usageRecorder?: UsageRecorder,
+  ): BedrockNovelTextGenerator {
     const client = {
       send: sendImpl,
     } as unknown as BedrockRuntimeClient;
-    return new BedrockNovelTextGenerator(client, modelId);
+    return new BedrockNovelTextGenerator(client, modelId, usageRecorder);
   }
 
   function lastConverseInput(sendMock: jest.Mock): Record<string, unknown> {
@@ -194,6 +198,99 @@ describe('BedrockNovelTextGenerator structured logging', () => {
       structuredOutput: false,
     });
     expect(lastConverseInput(send).outputConfig).toBeUndefined();
+  });
+
+  it('records usage via the injected recorder when callContext has a userEmail', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const send = jest.fn().mockResolvedValue({
+      output: {
+        message: {
+          content: [{ text: '{"overview":"o","theme":"t","tone":"tone","characters":[{"name":"H","role":"主人公","personality":"p","background":"b","goals":"g","relationships":"r"}],"world":{"geography":"g","timePeriod":"t"},"timelineRules":"tr","consistencyNotes":"cn"}' }],
+        },
+      },
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      stopReason: 'end_turn',
+    });
+    const recorded: Array<{ userEmail: string; input: RecordUsageInput }> = [];
+    const usageRecorder: UsageRecorder = {
+      recordUsage: async (userEmail, input) => {
+        recorded.push({ userEmail, input });
+      },
+    };
+    const generator = createGenerator(send, usageRecorder);
+
+    await generator.generateMetadata({
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      length: 'short',
+      callContext: { storyId: 'story-1', userEmail: 'user@example.com' },
+    });
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].userEmail).toBe('user@example.com');
+    expect(recorded[0].input).toMatchObject({
+      storyId: 'story-1',
+      phase: 'generate_metadata',
+      modelId,
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+  });
+
+  it('skips usage recording when callContext has no userEmail', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const send = jest.fn().mockResolvedValue({
+      output: {
+        message: {
+          content: [{ text: '{"overview":"o","theme":"t","tone":"tone","characters":[{"name":"H","role":"主人公","personality":"p","background":"b","goals":"g","relationships":"r"}],"world":{"geography":"g","timePeriod":"t"},"timelineRules":"tr","consistencyNotes":"cn"}' }],
+        },
+      },
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      stopReason: 'end_turn',
+    });
+    const recordUsage = jest.fn();
+    const generator = createGenerator(send, { recordUsage });
+
+    await generator.generateMetadata({
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      length: 'short',
+      callContext: { storyId: 'story-1' },
+    });
+
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it('does not let a usage recording failure fail the generation call', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const send = jest.fn().mockResolvedValue({
+      output: {
+        message: {
+          content: [{ text: '{"overview":"o","theme":"t","tone":"tone","characters":[{"name":"H","role":"主人公","personality":"p","background":"b","goals":"g","relationships":"r"}],"world":{"geography":"g","timePeriod":"t"},"timelineRules":"tr","consistencyNotes":"cn"}' }],
+        },
+      },
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      stopReason: 'end_turn',
+    });
+    const usageRecorder: UsageRecorder = {
+      recordUsage: async () => {
+        throw new Error('table unavailable');
+      },
+    };
+    const generator = createGenerator(send, usageRecorder);
+
+    await expect(
+      generator.generateMetadata({
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        length: 'short',
+        callContext: { storyId: 'story-1', userEmail: 'user@example.com' },
+      }),
+    ).resolves.toBeDefined();
   });
 
   it('throws when summarizeChapter JSON cannot be parsed', async () => {

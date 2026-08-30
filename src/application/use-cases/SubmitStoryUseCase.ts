@@ -2,6 +2,8 @@ import { Story } from '../../domain/entities/Story';
 import { StoryLength, resolveStoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
 import { RequestQueue } from '../ports/RequestQueue';
+import { UsageAccountRepository } from '../ports/UsageAccountRepository';
+import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface SubmitStoryInput {
   overview: string;
@@ -35,6 +37,7 @@ export class SubmitStoryUseCase {
   constructor(
     private readonly storyRepository: StoryRepository,
     private readonly requestQueue: RequestQueue,
+    private readonly usageAccountRepository: UsageAccountRepository,
   ) {}
 
   async execute(input: SubmitStoryInput): Promise<SubmitStoryOutput> {
@@ -52,6 +55,9 @@ export class SubmitStoryUseCase {
       requireFinalApproval: input.requireFinalApproval ?? !requireChapterApproval,
       length: resolveStoryLength(input.length),
     });
+
+    // Story.submit のバリデーション（メールアドレス形式など）を通過した後に予算を確認する。
+    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     await this.storyRepository.createStory(story);
     await this.requestQueue.enqueueStoryRequest(story.storyId);

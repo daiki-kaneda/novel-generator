@@ -22,6 +22,7 @@ export class NovelGeneratorStack extends cdk.Stack {
 
     const workflow = new NovelWorkflow(this, 'Workflow', {
       storyTable: storage.storyTable,
+      usageTable: storage.usageTable,
       contentBucket: storage.contentBucket,
       bedrockModelId: appConfig.bedrock.modelId,
       bedrockFoundationModelId: appConfig.bedrock.foundationModelId,
@@ -36,6 +37,7 @@ export class NovelGeneratorStack extends cdk.Stack {
 
     const api = new NovelApi(this, 'Api', {
       storyTable: storage.storyTable,
+      usageTable: storage.usageTable,
       contentBucket: storage.contentBucket,
       storyRequestQueueUrl: ingestion.requestQueue.queueUrl,
       storyRequestQueueArn: ingestion.requestQueue.queueArn,
@@ -66,6 +68,9 @@ export class NovelGeneratorStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'StoryTableName', {
       value: storage.storyTable.tableName,
+    });
+    new cdk.CfnOutput(this, 'UsageTableName', {
+      value: storage.usageTable.tableName,
     });
     new cdk.CfnOutput(this, 'NovelContentBucketName', {
       value: storage.contentBucket.bucketName,

@@ -1,8 +1,12 @@
 import { DecideApprovalUseCase } from '../../src/application/use-cases/DecideApprovalUseCase';
-import { ValidationError } from '../../src/domain/errors/DomainErrors';
+import { BudgetExceededError, ValidationError } from '../../src/domain/errors/DomainErrors';
 import { Story } from '../../src/domain/entities/Story';
 import { ApprovalStage } from '../../src/domain/value-objects/ApprovalDecision';
-import { FakeStoryRepository, FakeApprovalGateway } from './support/fakes';
+import {
+  FakeStoryRepository,
+  FakeApprovalGateway,
+  FakeUsageAccountRepository,
+} from './support/fakes';
 
 async function buildAwaitingStory(
   repo: FakeStoryRepository,
@@ -30,7 +34,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'plan');
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await useCase.execute({ storyId: story.storyId, expectedStage: 'plan', approved: true });
 
@@ -47,7 +51,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'metadata');
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await useCase.execute({
       storyId: story.storyId,
@@ -64,7 +68,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'final');
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await useCase.execute({
       storyId: story.storyId,
@@ -82,7 +86,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'final');
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await useCase.execute({
       storyId: story.storyId,
@@ -99,7 +103,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'plan');
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({ storyId: story.storyId, expectedStage: 'final', approved: true }),
@@ -112,7 +116,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'chapter', 2);
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await useCase.execute({
       storyId: story.storyId,
@@ -130,7 +134,7 @@ describe('DecideApprovalUseCase', () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();
     const story = await buildAwaitingStory(repo, 'chapter', 2);
-    const useCase = new DecideApprovalUseCase(repo, gateway);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
@@ -140,6 +144,21 @@ describe('DecideApprovalUseCase', () => {
         chapterIndex: 3,
       }),
     ).rejects.toThrow(ValidationError);
+
+    expect(gateway.sentDecisions).toHaveLength(0);
+  });
+
+  it('rejects when the story owner has exhausted their monthly usage budget', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const usageAccountRepository = new FakeUsageAccountRepository();
+    const story = await buildAwaitingStory(repo, 'plan');
+    usageAccountRepository.seedCurrentMonthUsage(story.request.userEmail, { totalCostUsd: 2 });
+    const useCase = new DecideApprovalUseCase(repo, gateway, usageAccountRepository);
+
+    await expect(
+      useCase.execute({ storyId: story.storyId, expectedStage: 'plan', approved: true }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
 
     expect(gateway.sentDecisions).toHaveLength(0);
   });

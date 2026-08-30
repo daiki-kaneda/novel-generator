@@ -1,6 +1,8 @@
 import { ValidationError } from '../../domain/errors/DomainErrors';
 import { StoryRepository } from '../ports/StoryRepository';
 import { WorkflowStarter } from '../ports/WorkflowStarter';
+import { UsageAccountRepository } from '../ports/UsageAccountRepository';
+import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface StartRevisionInput {
   storyId: string;
@@ -25,6 +27,7 @@ export class StartRevisionUseCase {
   constructor(
     private readonly storyRepository: StoryRepository,
     private readonly workflowStarter: WorkflowStarter,
+    private readonly usageAccountRepository: UsageAccountRepository,
   ) {}
 
   async execute(input: StartRevisionInput): Promise<StartRevisionOutput> {
@@ -40,6 +43,7 @@ export class StartRevisionUseCase {
     }
 
     const story = await this.storyRepository.getStory(input.storyId);
+    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     if (story.executionArn) {
       let status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'ABORTED';

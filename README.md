@@ -22,7 +22,7 @@ AWS 上で短編〜中編の日本語小説を生成するサーバーレスワ�
 
 | Construct | 役割 |
 |---|---|
-| `NovelStorage` | DynamoDB（Story / Plan / Chapter / TKG）と S3（章・最終本文） |
+| `NovelStorage` | DynamoDB（Story / Plan / Chapter / TKG、および利用コスト集計用のUsageTable）と S3（章・最終本文） |
 | `NovelWorkflow` | Step Functions + 生成・承認・Finalize 用 Lambda |
 | `NovelIngestion` | 投稿キュー（SQS）と Pipe |
 | `NovelApi` | HTTP API（投稿・状態取得・承認・改訂） |
@@ -88,6 +88,24 @@ AWS 上で短編〜中編の日本語小説を生成するサーバーレスワ�
 
 `length` は `short`（既定）または `medium` です。
 
+## 利用コスト管理（プラン別の月次予算）
+
+ユーザー認証は必須にしていません（承認メールのリンクはクリックだけで完結する体験を維持）。代わりに、
+`POST /stories` で受け取る `userEmail` をアカウントキーとして、Bedrock呼び出しの実コストを月単位で集計し、
+プランごとの予算上限に達したら新規の生成開始を拒否します。
+
+- **記録**: `GenerateMetadata` / `GeneratePlan` / `GenerateChapter` の各Lambdaが、Bedrock呼び出し1回ごとに
+  入力・出力トークン数から実コスト（USD）を計算し、`UsageTable`（PK=`accountEmail` / SK=`MONTHLY#<yyyy-MM>`）に
+  加算記録します。記録はベストエフォートで、失敗しても生成処理自体は止めません（SES送信失敗時の既存方針と同様）。
+  モデル別価格は [`src/domain/value-objects/BedrockPricing.ts`](src/domain/value-objects/BedrockPricing.ts) に集約しています。
+- **判定**: `POST /stories`（新規投稿）・`POST /stories/{storyId}/revisions`（改訂開始）・各種 `.../decision`
+  （承認/拒否。いずれも次工程の追加生成につながるため）の直前に、当月コストがプラン上限以上なら
+  `402 Payment Required` を返し、そこで停止します。すでに実行中のワークフロー内部（章の自動生成ループなど）
+  までは遮断しません。
+- **プラン**: `free`（既定、$2/月）と `pro`（$30/月）を [`src/domain/value-objects/UsagePlan.ts`](src/domain/value-objects/UsagePlan.ts) で定義しています。
+  決済連携は未実装のため、`pro`への昇格は運用者が`UsageTable`に `PK=accountEmail, SK=PROFILE, planTier=pro` の
+  レコードを直接投入することで行います（次段のスコープ）。
+
 ## Prerequisites
 
 - Node.js と npm
@@ -117,7 +135,7 @@ npx cdk deploy
 | `NOTIFICATION_FROM_ADDRESS` | SES 送信元 |
 | `CDK_DEFAULT_REGION` / `CDK_DEFAULT_ACCOUNT` | デプロイ先（任意） |
 
-デプロイ後、スタック出力の `ApiUrl`・`FrontendUrl`・`StateMachineArn` を控えてください。
+デプロイ後、スタック出力の `ApiUrl`・`FrontendUrl`・`StateMachineArn`・`UsageTableName` を控えてください。
 `FrontendUrl`（CloudFrontのドメイン）がReactフロントエンドの公開URLです。フロントエンドは
 `apiBaseUrl`を含む`config.json`をデプロイ時にランタイム設定として自動生成するため、API URLが
 変わってもフロントエンドの再ビルドは不要です（`cdk deploy`の再実行だけで反映されます）。

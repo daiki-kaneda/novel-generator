@@ -55,7 +55,7 @@ export class GeneratePlanUseCase {
       length: story.request.length,
       previousPlan: previousPlan?.toProps(),
       feedback: input.feedback,
-      callContext: { storyId: input.storyId },
+      callContext: { storyId: input.storyId, userEmail: story.request.userEmail },
     });
 
     const plan = Plan.create({

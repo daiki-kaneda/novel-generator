@@ -14,6 +14,24 @@ export class ValidationError extends Error {
   }
 }
 
+/** 月間利用コストがプランの上限に達しているため、新規の生成開始を拒否する場合のエラー。 */
+export class BudgetExceededError extends Error {
+  readonly planTier: string;
+  readonly monthlyCostUsd: number;
+  readonly monthlyBudgetUsd: number;
+
+  constructor(planTier: string, monthlyCostUsd: number, monthlyBudgetUsd: number) {
+    super(
+      `Monthly usage budget exceeded for plan "${planTier}": ` +
+        `$${monthlyCostUsd.toFixed(2)} used of $${monthlyBudgetUsd.toFixed(2)} limit`,
+    );
+    this.name = 'BudgetExceededError';
+    this.planTier = planTier;
+    this.monthlyCostUsd = monthlyCostUsd;
+    this.monthlyBudgetUsd = monthlyBudgetUsd;
+  }
+}
+
 /** TKG 矛盾検出時。Step Functions の Catch で捕捉する。 */
 export class ContradictionDetectedError extends Error {
   readonly contradictions: Array<{
