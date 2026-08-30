@@ -21,6 +21,7 @@ import { StartRevisionUseCase } from '../../application/use-cases/StartRevisionU
 import { SubmitStoryUseCase } from '../../application/use-cases/SubmitStoryUseCase';
 import { GetStoryStatusUseCase } from '../../application/use-cases/GetStoryStatusUseCase';
 import { GetChapterContentUseCase } from '../../application/use-cases/GetChapterContentUseCase';
+import { GetFinalContentUseCase } from '../../application/use-cases/GetFinalContentUseCase';
 import { GenerateMetadataUseCase } from '../../application/use-cases/GenerateMetadataUseCase';
 import { GeneratePlanUseCase } from '../../application/use-cases/GeneratePlanUseCase';
 import { RequestApprovalUseCase } from '../../application/use-cases/RequestApprovalUseCase';
@@ -103,6 +104,14 @@ export const container = {
   getChapterContentUseCase: lazy(
     () =>
       new GetChapterContentUseCase(
+        storyRepository(),
+        chapterContentStorage(),
+        finalUrlExpirySeconds(),
+      ),
+  ),
+  getFinalContentUseCase: lazy(
+    () =>
+      new GetFinalContentUseCase(
         storyRepository(),
         chapterContentStorage(),
         finalUrlExpirySeconds(),

@@ -111,13 +111,34 @@ describe('Story', () => {
     expect(story.taskStage).toBeUndefined();
   });
 
-  it('marks the story completed with the final URL', () => {
+  it('marks the story completed with the final S3 key and drops a stale URL', () => {
     const story = Story.submit(validRequest);
 
-    story.complete('https://example.com/final.txt');
+    story.complete(`stories/${story.storyId}/final.txt`);
 
     expect(story.status).toBe('COMPLETED');
-    expect(story.finalUrl).toBe('https://example.com/final.txt');
+    expect(story.finalKey).toBe(`stories/${story.storyId}/final.txt`);
+    expect(story.finalUrl).toBeUndefined();
+    expect(story.resolveFinalKey()).toBe(`stories/${story.storyId}/final.txt`);
+  });
+
+  it('falls back to the deterministic key for legacy completed stories', () => {
+    const story = Story.restore({
+      storyId: '00000000-0000-4000-8000-000000000099',
+      status: 'COMPLETED',
+      request: validRequest,
+      finalUrl: 'https://example.com/expired',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(story.finalKey).toBeUndefined();
+    expect(story.resolveFinalKey()).toBe('stories/00000000-0000-4000-8000-000000000099/final.txt');
+  });
+
+  it('does not resolve a final key unless the story is completed', () => {
+    const story = Story.submit(validRequest);
+    expect(story.resolveFinalKey()).toBeUndefined();
   });
 
   it('records a workflow failure and clears a stale approval token', () => {
@@ -137,7 +158,7 @@ describe('Story', () => {
 
   it('does not allow marking a completed story as failed', () => {
     const story = Story.submit(validRequest);
-    story.complete('https://example.com/final.txt');
+    story.complete(`stories/${story.storyId}/final.txt`);
 
     expect(() => story.fail('FAILED', '生成ワークフローが失敗しました')).toThrow(ValidationError);
     expect(story.status).toBe('COMPLETED');

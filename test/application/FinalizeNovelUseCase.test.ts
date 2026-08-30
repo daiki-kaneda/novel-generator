@@ -62,7 +62,9 @@ describe('FinalizeNovelUseCase', () => {
 
     const updatedStory = await repo.getStory(story.storyId);
     expect(updatedStory.status).toBe('COMPLETED');
-    expect(updatedStory.finalUrl).toBe(result.finalUrl);
+    expect(updatedStory.finalKey).toBe(`stories/${story.storyId}/final.txt`);
+    expect(updatedStory.finalUrl).toBeUndefined();
+    expect(result.finalUrl).not.toBe(updatedStory.finalKey);
   });
 
   it('fails fast when a chapter has not been generated yet', async () => {

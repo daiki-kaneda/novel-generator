@@ -52,6 +52,12 @@ export interface StoryMetaProps {
   /** 章承認待ちのとき、対象章のindex。 */
   currentChapterIndex?: number;
   executionArn?: string;
+  /**
+   * 最終原稿のS3キー。COMPLETED 後の再発行に使う。
+   * 旧レコードは未設定のことがあり、その場合は `stories/{storyId}/final.txt` に倒す。
+   */
+  finalKey?: string;
+  /** 旧データ互換。期限付きURLであり、新規の complete では書かない。 */
   finalUrl?: string;
   /** ワークフローが失敗終端したときの種別。成功・再実行後は未設定。 */
   failureKind?: StoryFailureKind;
@@ -147,8 +153,23 @@ export class Story {
     return this.props.executionArn;
   }
 
+  get finalKey(): string | undefined {
+    return this.props.finalKey;
+  }
+
   get finalUrl(): string | undefined {
     return this.props.finalUrl;
+  }
+
+  /**
+   * 完成原稿のS3キー。新規は `finalKey`、旧COMPLETEDレコードは決定的キーへ倒す。
+   * COMPLETED 以外では undefined。
+   */
+  resolveFinalKey(): string | undefined {
+    if (this.props.status !== 'COMPLETED') {
+      return undefined;
+    }
+    return this.props.finalKey ?? `stories/${this.props.storyId}/final.txt`;
   }
 
   get failureKind(): StoryFailureKind | undefined {
@@ -229,8 +250,13 @@ export class Story {
     this.touch();
   }
 
-  complete(finalUrl: string): void {
-    this.props.finalUrl = finalUrl;
+  /** 最終原稿のS3キーを記録して完成にする。期限付きURLは永続化しない。 */
+  complete(finalKey: string): void {
+    if (!finalKey.trim()) {
+      throw new ValidationError('finalKey is required to complete a story');
+    }
+    this.props.finalKey = finalKey;
+    this.props.finalUrl = undefined;
     this.props.status = 'COMPLETED';
     this.clearFailureFields();
     this.touch();

@@ -143,6 +143,12 @@ export interface ChapterContentOutput {
   contentUrl: string;
 }
 
+export interface FinalContentOutput {
+  storyId: string;
+  contentUrl: string;
+  expiresInSeconds: number;
+}
+
 export interface DecisionInput {
   approved: boolean;
   /** 拒否時は必須。修正してほしい点。 */

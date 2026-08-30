@@ -1,6 +1,7 @@
 import { getRuntimeConfig } from './runtimeConfig';
 import type {
   ChapterContentOutput,
+  FinalContentOutput,
   DecisionInput,
   FinalDecisionInput,
   StartRevisionInput,
@@ -58,6 +59,11 @@ export function getStoryStatus(storyId: string): Promise<StoryStatusOutput> {
 /** GET /stories/{storyId}/chapters/{chapterIndex}/content */
 export function getChapterContent(storyId: string, chapterIndex: number): Promise<ChapterContentOutput> {
   return request(`/stories/${encodeURIComponent(storyId)}/chapters/${chapterIndex}/content`);
+}
+
+/** GET /stories/{storyId}/final/content */
+export function getFinalContent(storyId: string): Promise<FinalContentOutput> {
+  return request(`/stories/${encodeURIComponent(storyId)}/final/content`);
 }
 
 /** POST /stories/{storyId}/metadata/decision */
