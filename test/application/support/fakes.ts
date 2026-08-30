@@ -21,7 +21,10 @@ import {
   RealignedFuturePlan,
 } from '../../../src/application/ports/NovelTextGenerator';
 import { ApprovalGateway } from '../../../src/application/ports/ApprovalGateway';
-import { NotificationSender } from '../../../src/application/ports/NotificationSender';
+import {
+  ApprovalRequestedEmailInput,
+  NotificationSender,
+} from '../../../src/application/ports/NotificationSender';
 import { RequestQueue } from '../../../src/application/ports/RequestQueue';
 import { WorkflowExecutionStatus, WorkflowStarter } from '../../../src/application/ports/WorkflowStarter';
 import { Story } from '../../../src/domain/entities/Story';
@@ -419,9 +422,18 @@ export class FakeApprovalGateway implements ApprovalGateway {
 
 export class FakeNotificationSender implements NotificationSender {
   readonly sentEmails: Array<{ toEmail: string; storyId: string; downloadUrl: string }> = [];
+  readonly sentApprovalEmails: ApprovalRequestedEmailInput[] = [];
+  approvalError?: Error;
 
   async sendCompletionEmail(toEmail: string, storyId: string, downloadUrl: string): Promise<void> {
     this.sentEmails.push({ toEmail, storyId, downloadUrl });
+  }
+
+  async sendApprovalRequestedEmail(input: ApprovalRequestedEmailInput): Promise<void> {
+    if (this.approvalError) {
+      throw this.approvalError;
+    }
+    this.sentApprovalEmails.push(input);
   }
 }
 

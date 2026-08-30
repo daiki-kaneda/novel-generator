@@ -30,6 +30,8 @@ export interface NovelWorkflowProps {
  */
 export class NovelWorkflow extends Construct {
   readonly stateMachine: sfn.StateMachine;
+  /** 承認待ちメールにフロントURLを後付け注入するため公開する。 */
+  readonly requestApprovalFn: NodejsFunction;
 
   constructor(scope: Construct, id: string, props: NovelWorkflowProps) {
     super(scope, id);
@@ -74,14 +76,16 @@ export class NovelWorkflow extends Construct {
     props.storyTable.grantReadWriteData(generatePlanFn);
     generatePlanFn.addToRolePolicy(bedrockInvokeStatement);
 
-    const requestApprovalFn = createHandlerFunction(this, 'RequestApprovalFunction', {
+    this.requestApprovalFn = createHandlerFunction(this, 'RequestApprovalFunction', {
       entry: 'requestApproval.ts',
-      description: 'taskTokenを保存し承認待ち状態に入る',
+      description: 'taskTokenを保存し承認待ち状態に入る。承認待ちメールを送る',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        NOTIFICATION_FROM_ADDRESS: props.notificationFromAddress,
       },
     });
-    props.storyTable.grantReadWriteData(requestApprovalFn);
+    props.storyTable.grantReadWriteData(this.requestApprovalFn);
+    this.requestApprovalFn.addToRolePolicy(sesSendStatement);
 
     const generateChapterFn = createHandlerFunction(this, 'GenerateChapterFunction', {
       entry: 'generateChapter.ts',
@@ -161,7 +165,7 @@ export class NovelWorkflow extends Construct {
       bindExecutionFn,
       generateMetadataFn,
       generatePlanFn,
-      requestApprovalFn,
+      requestApprovalFn: this.requestApprovalFn,
       generateChapterFn,
       compensateChapterFn,
       preparePartialRewriteFn,
