@@ -8,6 +8,7 @@ export const STORY_STATUS_LABELS: Record<StoryStatus, string> = {
   AWAITING_PLAN_APPROVAL: 'プランの承認待ち',
   CHAPTERS_GENERATING: '章本文を生成中',
   AWAITING_CHAPTER_APPROVAL: '章の承認待ち',
+  AWAITING_CHAPTER_RECOVERY: '章の再生成が必要',
   AWAITING_FINAL_APPROVAL: '最終原稿の承認待ち',
   REVISING: '再生成中',
   COMPLETED: '完成',

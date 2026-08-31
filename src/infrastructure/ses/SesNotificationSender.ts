@@ -12,7 +12,14 @@ const STAGE_SUBJECT: Record<ApprovalStage, string> = {
   final: '【短編小説生成】最終原稿の承認が必要です',
 };
 
-function approvalSubject(stage: ApprovalStage, chapterIndex?: number): string {
+function approvalSubject(
+  stage: ApprovalStage,
+  chapterIndex?: number,
+  purpose?: ApprovalRequestedEmailInput['purpose'],
+): string {
+  if (stage === 'chapter' && purpose === 'recovery' && chapterIndex !== undefined) {
+    return `【短編小説生成】第${chapterIndex}章の生成に失敗しました`;
+  }
   if (stage === 'chapter' && chapterIndex !== undefined) {
     return `【短編小説生成】第${chapterIndex}章の承認が必要です`;
   }
@@ -20,17 +27,22 @@ function approvalSubject(stage: ApprovalStage, chapterIndex?: number): string {
 }
 
 function approvalBody(input: ApprovalRequestedEmailInput): string {
-  const stageLine =
-    input.stage === 'chapter' && input.chapterIndex !== undefined
+  const isRecovery = input.stage === 'chapter' && input.purpose === 'recovery';
+  const intro = isRecovery
+    ? '章の本文生成が2回失敗したため、修正の指示が必要です。'
+    : '物語の生成が承認待ちになりました。';
+  const stageLine = isRecovery
+    ? `第${input.chapterIndex}章は未生成のままです。承認では先に進めないので、画面から修正の指示を出して再生成してください。`
+    : input.stage === 'chapter' && input.chapterIndex !== undefined
       ? `第${input.chapterIndex}章の本文を確認し、承認または拒否してください。`
       : '内容を確認し、承認または拒否してください。';
   return [
-    '物語の生成が承認待ちになりました。',
+    intro,
     stageLine,
     `Story ID: ${input.storyId}`,
-    `確認・承認: ${input.storyPageUrl}`,
+    `確認: ${input.storyPageUrl}`,
     '',
-    'このURLを知っている人は誰でも閲覧・承認できます。共有範囲に注意してください。',
+    'このURLを開くには、物語の所有者としてログインしている必要があります。',
   ].join('\n');
 }
 
@@ -71,7 +83,7 @@ export class SesNotificationSender implements NotificationSender {
         Source: this.fromAddress,
         Destination: { ToAddresses: [input.toEmail] },
         Message: {
-          Subject: { Data: approvalSubject(input.stage, input.chapterIndex), Charset: 'UTF-8' },
+          Subject: { Data: approvalSubject(input.stage, input.chapterIndex, input.purpose), Charset: 'UTF-8' },
           Body: {
             Text: {
               Data: approvalBody(input),

@@ -73,7 +73,7 @@ export function ApprovalPanel({
     <div className="card card--highlight">
       <h3>{APPROVAL_STAGE_LABELS[stage]}の承認待ち</h3>
       <p className="approval-panel__hint">
-        内容を確認し、問題なければ承認してください。修正が必要な場合は拒否して修正点を伝えると、フィードバックを反映して再生成されます。
+        生成結果を確認し、問題なければ承認してください。修正が必要な場合は拒否して修正点を伝えると、フィードバックを反映して再生成されます。
         {showReadLink && stage === 'chapter' && chapterIndex !== undefined && (
           <>
             {' '}

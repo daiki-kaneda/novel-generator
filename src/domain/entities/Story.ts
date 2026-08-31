@@ -1,5 +1,6 @@
 import { StoryId } from '../value-objects/StoryId';
-import { ApprovalStage } from '../value-objects/ApprovalDecision';
+import { ApprovalPurpose, ApprovalStage } from '../value-objects/ApprovalDecision';
+import { ChapterGenerationError } from '../value-objects/ChapterGenerationError';
 import { StoryLength, resolveStoryLength } from '../value-objects/StoryLength';
 import { ForbiddenError, ValidationError } from '../errors/DomainErrors';
 
@@ -11,6 +12,7 @@ export type StoryStatus =
   | 'AWAITING_PLAN_APPROVAL'
   | 'CHAPTERS_GENERATING'
   | 'AWAITING_CHAPTER_APPROVAL'
+  | 'AWAITING_CHAPTER_RECOVERY'
   | 'AWAITING_FINAL_APPROVAL'
   | 'REVISING'
   | 'COMPLETED'
@@ -51,8 +53,18 @@ export interface StoryMetaProps {
   request: StoryRequest;
   currentTaskToken?: string;
   taskStage?: ApprovalStage;
+  /**
+   * 章待ちの目的。`recovery` は生成失敗後の再生成指示待ち。
+   * 通常の内容承認では未設定（review 相当）。
+   */
+  approvalPurpose?: ApprovalPurpose;
   /** 章承認待ちのとき、対象章のindex。 */
   currentChapterIndex?: number;
+  /**
+   * 直近の章生成失敗。回復待ち・FAILED 時にユーザーへ見せる。
+   * 成功した生成や新しい実行開始で消す。
+   */
+  lastChapterError?: ChapterGenerationError;
   executionArn?: string;
   /**
    * 最終原稿のS3キー。COMPLETED 後の再発行に使う。
@@ -170,8 +182,16 @@ export class Story {
     return this.props.taskStage;
   }
 
+  get approvalPurpose(): ApprovalPurpose | undefined {
+    return this.props.approvalPurpose;
+  }
+
   get currentChapterIndex(): number | undefined {
     return this.props.currentChapterIndex;
+  }
+
+  get lastChapterError(): ChapterGenerationError | undefined {
+    return this.props.lastChapterError;
   }
 
   get executionArn(): string | undefined {
@@ -240,20 +260,31 @@ export class Story {
     this.props.failureReason = reason;
     this.props.currentTaskToken = undefined;
     this.props.taskStage = undefined;
+    this.props.approvalPurpose = undefined;
     this.props.currentChapterIndex = undefined;
     this.touch();
   }
 
   /** 承認待ちに入ったことを記録する（コールバックトークンを保持）。 */
-  awaitApproval(stage: ApprovalStage, taskToken: string, chapterIndex?: number): void {
+  awaitApproval(
+    stage: ApprovalStage,
+    taskToken: string,
+    chapterIndex?: number,
+    purpose?: ApprovalPurpose,
+  ): void {
+    if (purpose === 'recovery' && stage !== 'chapter') {
+      throw new ValidationError('Recovery purpose is only valid for chapter approval');
+    }
     this.props.taskStage = stage;
     this.props.currentTaskToken = taskToken;
+    this.props.approvalPurpose = purpose === 'recovery' ? 'recovery' : undefined;
     if (stage === 'chapter') {
       if (chapterIndex === undefined) {
         throw new ValidationError('Chapter approval requires a chapterIndex');
       }
       this.props.currentChapterIndex = chapterIndex;
-      this.props.status = 'AWAITING_CHAPTER_APPROVAL';
+      this.props.status =
+        purpose === 'recovery' ? 'AWAITING_CHAPTER_RECOVERY' : 'AWAITING_CHAPTER_APPROVAL';
     } else {
       this.props.currentChapterIndex = undefined;
       if (stage === 'metadata') {
@@ -271,7 +302,14 @@ export class Story {
   clearApproval(): void {
     this.props.currentTaskToken = undefined;
     this.props.taskStage = undefined;
+    this.props.approvalPurpose = undefined;
     this.props.currentChapterIndex = undefined;
+    this.touch();
+  }
+
+  /** 章生成の失敗内容をユーザー向けに記録する。 */
+  recordChapterError(error: ChapterGenerationError): void {
+    this.props.lastChapterError = { ...error };
     this.touch();
   }
 
@@ -290,6 +328,7 @@ export class Story {
   private clearFailureFields(): void {
     this.props.failureKind = undefined;
     this.props.failureReason = undefined;
+    this.props.lastChapterError = undefined;
   }
 
   private touch(): void {

@@ -5,7 +5,8 @@ import {
   WorldSetting,
 } from '../../domain/entities/StoryMetadata';
 import { PlanProps, PlanSnapshotTrigger, RoughBeat } from '../../domain/entities/Plan';
-import { ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
+import { ApprovalPurpose, ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
+import { ChapterGenerationError } from '../../domain/value-objects/ChapterGenerationError';
 import { StoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
 
@@ -19,6 +20,8 @@ export interface StoryStatusOutput {
   length: StoryLength;
   taskStage?: ApprovalStage;
   currentChapterIndex?: number;
+  approvalPurpose?: ApprovalPurpose;
+  lastChapterError?: ChapterGenerationError;
   /** ユーザー初期リクエスト（シード）。設定書の正本ではない。 */
   request: {
     overview: string;
@@ -84,6 +87,17 @@ export class GetStoryStatusUseCase {
       length: story.request.length,
       taskStage: story.taskStage,
       currentChapterIndex: story.currentChapterIndex,
+      approvalPurpose: story.approvalPurpose,
+      lastChapterError: story.lastChapterError
+        ? {
+            chapterIndex: story.lastChapterError.chapterIndex,
+            kind: story.lastChapterError.kind,
+            message: story.lastChapterError.message,
+            contradictions: story.lastChapterError.contradictions
+              ? story.lastChapterError.contradictions.map((item) => ({ ...item }))
+              : undefined,
+          }
+        : undefined,
       request: {
         overview: story.request.overview,
         theme: story.request.theme,

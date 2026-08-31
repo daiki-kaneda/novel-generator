@@ -165,10 +165,7 @@ export class GenerateChapterUseCase {
       callContext,
     });
     if (contradiction.hasContradiction) {
-      throw new ContradictionDetectedError(
-        `Contradiction detected in chapter ${input.chapterIndex} for story ${input.storyId}`,
-        contradiction.contradictions,
-      );
+      throw new ContradictionDetectedError(input.chapterIndex, contradiction.contradictions);
     }
 
     await this.persistWorldStateUpdate({

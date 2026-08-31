@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { ApprovalPanel } from '../components/ApprovalPanel';
+import { ChapterRecoveryPanel } from '../components/ChapterRecoveryPanel';
 import { FinalDownloadButton } from '../components/FinalDownloadButton';
 import { RevisionPanel } from '../components/RevisionPanel';
 import { ChapterList } from '../components/ChapterList';
@@ -100,7 +101,23 @@ export function StoryStatusPage() {
       {data.status === 'FAILED' && (
         <div className="card card--danger">
           <h3>ワークフローが失敗しました</h3>
-          <p>{data.failureReason ?? '生成ワークフローが失敗しました'}</p>
+          {data.lastChapterError ? (
+            <>
+              <p className="recovery-error__message">{data.lastChapterError.message}</p>
+              {data.lastChapterError.contradictions && data.lastChapterError.contradictions.length > 0 && (
+                <ul className="recovery-error__list">
+                  {data.lastChapterError.contradictions.map((item) => (
+                    <li key={`${item.newFact}-${item.conflictingFact}`}>
+                      新しい事実「{item.newFact}」は、既存の事実「{item.conflictingFact}」と矛盾します（
+                      {item.reason}）
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p>{data.failureReason ?? '生成ワークフローが失敗しました'}</p>
+          )}
           <p className="approval-panel__hint">
             実行中ロックは解除済みです。
             {data.plan
@@ -121,14 +138,24 @@ export function StoryStatusPage() {
           <RevisionPanel storyId={data.storyId} chapters={data.plan.chapters} />
         )}
 
-      {isAwaitingApproval(data.status) && data.taskStage && (
-        <ApprovalPanel
+      {data.status === 'AWAITING_CHAPTER_RECOVERY' && data.currentChapterIndex !== undefined && (
+        <ChapterRecoveryPanel
           storyId={data.storyId}
-          stage={data.taskStage}
           chapterIndex={data.currentChapterIndex}
-          maxChapterIndex={maxChapterIndex}
+          lastChapterError={data.lastChapterError}
         />
       )}
+
+      {isAwaitingApproval(data.status) &&
+        data.status !== 'AWAITING_CHAPTER_RECOVERY' &&
+        data.taskStage && (
+          <ApprovalPanel
+            storyId={data.storyId}
+            stage={data.taskStage}
+            chapterIndex={data.currentChapterIndex}
+            maxChapterIndex={maxChapterIndex}
+          />
+        )}
 
       {data.metadata && <MetadataView metadata={data.metadata} />}
       {data.plan && <PlanView plan={data.plan} />}

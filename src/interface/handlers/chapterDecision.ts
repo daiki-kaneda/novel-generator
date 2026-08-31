@@ -27,6 +27,7 @@ export const handler = async (
     const caller = getAuthenticatedCaller(event);
     const body = JSON.parse(event.body ?? '{}');
     const approved = Boolean(body.approved);
+    const abort = Boolean(body.abort);
 
     await container.decideApprovalUseCase().execute({
       storyId,
@@ -35,9 +36,10 @@ export const handler = async (
       approved,
       feedback: body.feedback,
       chapterIndex,
+      abort,
     });
 
-    return jsonResponse(200, { storyId, stage: 'chapter', chapterIndex, approved });
+    return jsonResponse(200, { storyId, stage: 'chapter', chapterIndex, approved, abort });
   } catch (error) {
     return errorResponse(error);
   }

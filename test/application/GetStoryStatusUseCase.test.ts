@@ -112,6 +112,46 @@ describe('GetStoryStatusUseCase', () => {
     expect(status.failureReason).toBe('生成ワークフローが失敗しました');
   });
 
+  it('exposes lastChapterError when chapter generation failed', async () => {
+    const repo = new FakeStoryRepository();
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
+    story.recordChapterError({
+      chapterIndex: 2,
+      kind: 'contradiction',
+      message: '第2章の生成で矛盾が見つかりました',
+      contradictions: [
+        {
+          newFact: '剣を持っている',
+          conflictingFact: '剣を失った',
+          reason: '所持できない',
+        },
+      ],
+    });
+    story.awaitApproval('chapter', 'token', 2, 'recovery');
+    await repo.createStory(story);
+
+    const status = await new GetStoryStatusUseCase(repo).execute(story.storyId, story.ownerId);
+
+    expect(status.status).toBe('AWAITING_CHAPTER_RECOVERY');
+    expect(status.approvalPurpose).toBe('recovery');
+    expect(status.lastChapterError?.kind).toBe('contradiction');
+    expect(status.lastChapterError?.message).toContain('矛盾');
+    expect(status.lastChapterError?.contradictions).toHaveLength(1);
+  });
+
   it('rejects when the caller is not the story owner', async () => {
     const repo = new FakeStoryRepository();
     const story = Story.submit(

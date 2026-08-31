@@ -6,6 +6,11 @@ import { ValidationError } from '../errors/DomainErrors';
 export type ApprovalStage = 'metadata' | 'plan' | 'chapter' | 'final';
 
 /**
+ * 章待ちの目的。`recovery` は生成失敗後の再生成指示待ちであり、通常の内容承認ではない。
+ */
+export type ApprovalPurpose = 'review' | 'recovery';
+
+/**
  * ユーザーによる承認/拒否の決定。拒否時は修正点のフィードバックを必須とする。
  * 最終拒否時は rewriteFromChapterIndex で部分再生成の開始章を指定できる。
  */

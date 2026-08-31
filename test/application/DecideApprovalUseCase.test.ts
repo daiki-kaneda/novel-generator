@@ -151,6 +151,83 @@ describe('DecideApprovalUseCase', () => {
     expect(updated.currentChapterIndex).toBeUndefined();
   });
 
+  it('rejects approving a failed chapter during recovery so it cannot stay pending', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'chapter', 2);
+    story.awaitApproval('chapter', 'task-token', 2, 'recovery');
+    await repo.saveStory(story);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        callerId: story.ownerId,
+        expectedStage: 'chapter',
+        approved: true,
+        chapterIndex: 2,
+      }),
+    ).rejects.toThrow(ValidationError);
+
+    expect(gateway.sentDecisions).toHaveLength(0);
+    const updated = await repo.getStory(story.storyId);
+    expect(updated.currentTaskToken).toBe('task-token');
+    expect(updated.approvalPurpose).toBe('recovery');
+  });
+
+  it('sends a recovery retry as a rejection with feedback', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'chapter', 2);
+    story.awaitApproval('chapter', 'task-token', 2, 'recovery');
+    await repo.saveStory(story);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
+
+    await useCase.execute({
+      storyId: story.storyId,
+      callerId: story.ownerId,
+      expectedStage: 'chapter',
+      approved: false,
+      feedback: '剣を失った設定と矛盾しない展開にしてほしい',
+      chapterIndex: 2,
+    });
+
+    expect(gateway.sentDecisions).toHaveLength(1);
+    expect(gateway.sentDecisions[0].decision.approved).toBe(false);
+    expect(gateway.sentDecisions[0].decision.feedback).toBe(
+      '剣を失った設定と矛盾しない展開にしてほしい',
+    );
+  });
+
+  it('aborts chapter recovery by failing the wait token', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'chapter', 2);
+    story.awaitApproval('chapter', 'task-token', 2, 'recovery');
+    await repo.saveStory(story);
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
+
+    await useCase.execute({
+      storyId: story.storyId,
+      callerId: story.ownerId,
+      expectedStage: 'chapter',
+      approved: false,
+      abort: true,
+      chapterIndex: 2,
+    });
+
+    expect(gateway.sentDecisions).toHaveLength(0);
+    expect(gateway.sentFailures).toEqual([
+      {
+        taskToken: 'task-token',
+        error: 'ChapterRecoveryAborted',
+        cause: 'User aborted chapter recovery',
+      },
+    ]);
+    const updated = await repo.getStory(story.storyId);
+    expect(updated.currentTaskToken).toBeUndefined();
+  });
+
   it('rejects a chapter decision when the chapter index does not match', async () => {
     const repo = new FakeStoryRepository();
     const gateway = new FakeApprovalGateway();

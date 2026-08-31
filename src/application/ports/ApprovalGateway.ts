@@ -6,4 +6,6 @@ import { ApprovalDecision } from '../../domain/value-objects/ApprovalDecision';
  */
 export interface ApprovalGateway {
   sendDecision(taskToken: string, decision: ApprovalDecision): Promise<void>;
+  /** 回復待ちを中止し、ワークフローを失敗させる。 */
+  sendFailure(taskToken: string, error: string, cause: string): Promise<void>;
 }
