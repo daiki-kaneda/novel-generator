@@ -15,17 +15,20 @@ describe('FinalizeNovelUseCase', () => {
     const storage = new FakeChapterContentStorage();
     const notifier = new FakeNotificationSender();
 
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
     await repo.savePlan(
       story.storyId,
@@ -72,17 +75,20 @@ describe('FinalizeNovelUseCase', () => {
     const storage = new FakeChapterContentStorage();
     const notifier = new FakeNotificationSender();
 
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
     await repo.savePlan(
       story.storyId,

@@ -43,7 +43,7 @@ export class GenerateMetadataUseCase {
       length: story.request.length,
       previousMetadata: previousMetadata?.toProps(),
       feedback: input.feedback,
-      callContext: { storyId: input.storyId },
+      callContext: { storyId: input.storyId, userEmail: story.request.userEmail },
     });
 
     const metadata = StoryMetadata.create({

@@ -1,10 +1,14 @@
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type {
+  APIGatewayProxyEventV2WithJWTAuthorizer,
+  APIGatewayProxyResultV2,
+} from 'aws-lambda';
 import { container } from '../composition/container';
 import { jsonResponse, errorResponse } from './support/httpResponse';
+import { getAuthenticatedCaller } from './support/auth';
 
 /** GET /stories/{storyId}/chapters/{chapterIndex}/content: 章本文と署名付きURLを取得する。 */
 export const handler = async (
-  event: APIGatewayProxyEventV2,
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
 ): Promise<APIGatewayProxyResultV2> => {
   try {
     const storyId = event.pathParameters?.storyId;
@@ -20,7 +24,10 @@ export const handler = async (
       return jsonResponse(400, { message: 'chapterIndex must be a positive integer' });
     }
 
-    const output = await container.getChapterContentUseCase().execute({ storyId, chapterIndex });
+    const caller = getAuthenticatedCaller(event);
+    const output = await container
+      .getChapterContentUseCase()
+      .execute({ storyId, chapterIndex, callerId: caller.ownerId });
     return jsonResponse(200, output);
   } catch (error) {
     return errorResponse(error);

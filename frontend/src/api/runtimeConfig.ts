@@ -10,22 +10,33 @@
 export interface RuntimeConfig {
   /** バックエンドHTTP APIのベースURL（末尾にスラッシュを含めない）。 */
   apiBaseUrl: string;
+  /** ユーザー認証用 Cognito User Pool ID。 */
+  cognitoUserPoolId: string;
+  /** フロントエンド（SPA）用 Cognito User Pool Client ID。 */
+  cognitoUserPoolClientId: string;
 }
 
 let cachedConfig: Promise<RuntimeConfig> | undefined;
 let loadedConfig: RuntimeConfig | undefined;
 
-function normalize(raw: unknown): RuntimeConfig {
-  if (
-    !raw ||
-    typeof raw !== 'object' ||
-    typeof (raw as Record<string, unknown>).apiBaseUrl !== 'string' ||
-    (raw as Record<string, unknown>).apiBaseUrl === ''
-  ) {
-    throw new Error('config.json に文字列の apiBaseUrl が見つかりません');
+function requireString(raw: Record<string, unknown>, key: string): string {
+  const value = raw[key];
+  if (typeof value !== 'string' || value === '') {
+    throw new Error(`config.json に文字列の ${key} が見つかりません`);
   }
-  const apiBaseUrl = (raw as Record<string, unknown>).apiBaseUrl as string;
-  return { apiBaseUrl: apiBaseUrl.replace(/\/+$/, '') };
+  return value;
+}
+
+function normalize(raw: unknown): RuntimeConfig {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('config.json の形式が不正です');
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    apiBaseUrl: requireString(record, 'apiBaseUrl').replace(/\/+$/, ''),
+    cognitoUserPoolId: requireString(record, 'cognitoUserPoolId'),
+    cognitoUserPoolClientId: requireString(record, 'cognitoUserPoolClientId'),
+  };
 }
 
 /** アプリ起動時に一度だけ呼ぶ。以後は `getRuntimeConfig()` で同期的に取得する。 */

@@ -5,6 +5,7 @@ import { ChapterContentStorage } from '../ports/ChapterContentStorage';
 export interface GetChapterContentInput {
   storyId: string;
   chapterIndex: number;
+  callerId: string;
 }
 
 export interface GetChapterContentOutput {
@@ -33,7 +34,8 @@ export class GetChapterContentUseCase {
       throw new ValidationError('chapterIndex must be a positive integer');
     }
 
-    await this.storyRepository.getStory(input.storyId);
+    const story = await this.storyRepository.getStory(input.storyId);
+    story.assertOwnedBy(input.callerId);
     const chapter = await this.storyRepository.getChapter(input.storyId, input.chapterIndex);
 
     if (!chapter.s3Key) {

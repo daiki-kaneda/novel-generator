@@ -8,6 +8,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 
 import { DynamoDbStoryRepository } from '../../infrastructure/dynamodb/DynamoDbStoryRepository';
 import { DynamoDbWorldStateRepository } from '../../infrastructure/dynamodb/DynamoDbWorldStateRepository';
+import { DynamoDbUsageAccountRepository } from '../../infrastructure/dynamodb/DynamoDbUsageAccountRepository';
 import { S3ChapterContentStorage } from '../../infrastructure/s3/S3ChapterContentStorage';
 import { BedrockNovelTextGenerator } from '../../infrastructure/bedrock/BedrockNovelTextGenerator';
 import { StepFunctionsApprovalGateway } from '../../infrastructure/stepfunctions/StepFunctionsApprovalGateway';
@@ -20,6 +21,7 @@ import { ClearExecutionUseCase } from '../../application/use-cases/ClearExecutio
 import { StartRevisionUseCase } from '../../application/use-cases/StartRevisionUseCase';
 import { SubmitStoryUseCase } from '../../application/use-cases/SubmitStoryUseCase';
 import { GetStoryStatusUseCase } from '../../application/use-cases/GetStoryStatusUseCase';
+import { ListMyStoriesUseCase } from '../../application/use-cases/ListMyStoriesUseCase';
 import { GetChapterContentUseCase } from '../../application/use-cases/GetChapterContentUseCase';
 import { GetFinalContentUseCase } from '../../application/use-cases/GetFinalContentUseCase';
 import { GenerateMetadataUseCase } from '../../application/use-cases/GenerateMetadataUseCase';
@@ -72,11 +74,19 @@ const storyRepository = lazy(
 const worldStateRepository = lazy(
   () => new DynamoDbWorldStateRepository(dynamoDbDocumentClient(), requiredEnv('STORY_TABLE_NAME')),
 );
+const usageAccountRepository = lazy(
+  () => new DynamoDbUsageAccountRepository(dynamoDbDocumentClient(), requiredEnv('USAGE_TABLE_NAME')),
+);
 const chapterContentStorage = lazy(
   () => new S3ChapterContentStorage(s3Client(), requiredEnv('CONTENT_BUCKET_NAME')),
 );
 const novelTextGenerator = lazy(
-  () => new BedrockNovelTextGenerator(bedrockClient(), requiredEnv('BEDROCK_MODEL_ID')),
+  () =>
+    new BedrockNovelTextGenerator(
+      bedrockClient(),
+      requiredEnv('BEDROCK_MODEL_ID'),
+      usageAccountRepository(),
+    ),
 );
 const approvalGateway = lazy(() => new StepFunctionsApprovalGateway(sfnClient()));
 const workflowStarter = lazy(
@@ -99,8 +109,11 @@ const finalUrlExpirySeconds = lazy(() =>
  * 各エントリは遅延評価されるため、実際に呼び出したユースケースの依存先だけが構築される。
  */
 export const container = {
-  submitStoryUseCase: lazy(() => new SubmitStoryUseCase(storyRepository(), requestQueue())),
+  submitStoryUseCase: lazy(
+    () => new SubmitStoryUseCase(storyRepository(), requestQueue(), usageAccountRepository()),
+  ),
   getStoryStatusUseCase: lazy(() => new GetStoryStatusUseCase(storyRepository())),
+  listMyStoriesUseCase: lazy(() => new ListMyStoriesUseCase(storyRepository())),
   getChapterContentUseCase: lazy(
     () =>
       new GetChapterContentUseCase(
@@ -137,7 +150,7 @@ export const container = {
       ),
   ),
   decideApprovalUseCase: lazy(
-    () => new DecideApprovalUseCase(storyRepository(), approvalGateway()),
+    () => new DecideApprovalUseCase(storyRepository(), approvalGateway(), usageAccountRepository()),
   ),
   generateChapterUseCase: lazy(
     () =>
@@ -174,7 +187,8 @@ export const container = {
       ),
   ),
   startRevisionUseCase: lazy(
-    () => new StartRevisionUseCase(storyRepository(), workflowStarter()),
+    () =>
+      new StartRevisionUseCase(storyRepository(), workflowStarter(), usageAccountRepository()),
   ),
   bindExecutionUseCase: lazy(() => new BindExecutionUseCase(storyRepository())),
   clearExecutionUseCase: lazy(() => new ClearExecutionUseCase(storyRepository())),

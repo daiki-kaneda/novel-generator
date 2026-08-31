@@ -66,8 +66,9 @@ export interface StoryStatusOutput {
 export class GetStoryStatusUseCase {
   constructor(private readonly storyRepository: StoryRepository) {}
 
-  async execute(storyId: string): Promise<StoryStatusOutput> {
+  async execute(storyId: string, callerId: string): Promise<StoryStatusOutput> {
     const story = await this.storyRepository.getStory(storyId);
+    story.assertOwnedBy(callerId);
     const metadata = await this.storyRepository.findMetadata(storyId);
     const plan = await this.storyRepository.findPlan(storyId);
     const planSnapshots = await this.storyRepository.listPlanSnapshots(storyId);

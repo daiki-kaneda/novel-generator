@@ -6,18 +6,21 @@ describe('GenerateMetadataUseCase', () => {
   it('generates metadata from the request seed and persists it', async () => {
     const repo = new FakeStoryRepository();
     const generator = new FakeNovelTextGenerator();
-    const story = Story.submit({
-      overview: 'seed overview',
-      theme: 'seed theme',
-      characters: 'seed characters',
-      setting: '砂漠の都市国家',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'seed overview',
+        theme: 'seed theme',
+        characters: 'seed characters',
+        setting: '砂漠の都市国家',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
 
     let capturedSetting: string | undefined;
@@ -50,17 +53,20 @@ describe('GenerateMetadataUseCase', () => {
   it('records rejection feedback into revision history on regenerate', async () => {
     const repo = new FakeStoryRepository();
     const generator = new FakeNovelTextGenerator();
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
 
     const useCase = new GenerateMetadataUseCase(repo, generator);

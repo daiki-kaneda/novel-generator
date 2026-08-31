@@ -7,17 +7,20 @@ import { FakeStoryRepository } from './support/fakes';
 describe('BindExecutionUseCase', () => {
   it('binds executionArn when none is set', async () => {
     const repo = new FakeStoryRepository();
-    const story = Story.submit({
-      overview: 'o',
-      theme: 't',
-      characters: 'c',
-      userEmail: 'u@example.com',
-      requireMetadataApproval: false,
-      requirePlanApproval: false,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'u@example.com',
+        requireMetadataApproval: false,
+        requirePlanApproval: false,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
 
     const useCase = new BindExecutionUseCase(repo);
@@ -30,17 +33,20 @@ describe('BindExecutionUseCase', () => {
 
   it('is idempotent when the same ARN is already bound', async () => {
     const repo = new FakeStoryRepository();
-    const story = Story.submit({
-      overview: 'o',
-      theme: 't',
-      characters: 'c',
-      userEmail: 'u@example.com',
-      requireMetadataApproval: false,
-      requirePlanApproval: false,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'u@example.com',
+        requireMetadataApproval: false,
+        requirePlanApproval: false,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     const arn = 'arn:aws:states:us-east-1:123:execution:novel:exec-1';
     story.bindExecution(arn);
     await repo.createStory(story);
@@ -53,17 +59,20 @@ describe('BindExecutionUseCase', () => {
 
   it('rejects when a different ARN is already bound', async () => {
     const repo = new FakeStoryRepository();
-    const story = Story.submit({
-      overview: 'o',
-      theme: 't',
-      characters: 'c',
-      userEmail: 'u@example.com',
-      requireMetadataApproval: false,
-      requirePlanApproval: false,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'u@example.com',
+        requireMetadataApproval: false,
+        requirePlanApproval: false,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     story.bindExecution('arn:aws:states:us-east-1:123:execution:novel:other');
     await repo.createStory(story);
 
@@ -78,17 +87,20 @@ describe('BindExecutionUseCase', () => {
 });
 
 function submitStory() {
-  return Story.submit({
-    overview: 'o',
-    theme: 't',
-    characters: 'c',
-    userEmail: 'u@example.com',
-    requireMetadataApproval: false,
-    requirePlanApproval: false,
-    requireChapterApproval: false,
-    requireFinalApproval: true,
-    length: 'short',
-  });
+  return Story.submit(
+    {
+      overview: 'o',
+      theme: 't',
+      characters: 'c',
+      userEmail: 'u@example.com',
+      requireMetadataApproval: false,
+      requirePlanApproval: false,
+      requireChapterApproval: false,
+      requireFinalApproval: true,
+      length: 'short',
+    },
+    'owner-1',
+  );
 }
 
 describe('ClearExecutionUseCase', () => {

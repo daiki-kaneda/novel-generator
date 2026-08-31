@@ -13,6 +13,7 @@ import { NotFoundError } from '../../domain/errors/DomainErrors';
 import { StoryRepository } from '../../application/ports/StoryRepository';
 
 const META_RECORD_TYPE = 'META';
+const OWNER_INDEX_NAME = 'OwnerIndex';
 const METADATA_RECORD_TYPE = 'METADATA';
 const PLAN_RECORD_TYPE = 'PLAN';
 const PLAN_SNAPSHOT_RECORD_PREFIX = 'PLAN#SNAP#';
@@ -59,6 +60,19 @@ export class DynamoDbStoryRepository implements StoryRepository {
         Item: this.toMetaItem(story.toProps()),
       }),
     );
+  }
+
+  async findByOwner(ownerId: string): Promise<Story[]> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: OWNER_INDEX_NAME,
+        KeyConditionExpression: 'ownerId = :ownerId',
+        ExpressionAttributeValues: { ':ownerId': ownerId },
+        ScanIndexForward: false,
+      }),
+    );
+    return (result.Items ?? []).map((item) => Story.restore(this.fromMetaItem(item)));
   }
 
   async saveMetadata(storyId: string, metadata: StoryMetadata): Promise<void> {

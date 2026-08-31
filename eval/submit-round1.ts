@@ -2,9 +2,12 @@
 /**
  * 評価ラウンド1のシードを POST /stories へ投入する。
  *
+ * API は Cognito JWT Authorizer で保護されているため、事前にログインして取得した
+ * ID トークンを EVAL_ID_TOKEN に渡す必要がある（DRY_RUN=1 のときは不要）。
+ *
  * 用法:
  *   API_BASE_URL=https://xxxx.execute-api.ap-northeast-1.amazonaws.com \
- *   EVAL_USER_EMAIL=you@example.com \
+ *   EVAL_ID_TOKEN=eyJraWQi... \
  *   npx ts-node eval/submit-round1.ts
  *
  * オプション:
@@ -36,7 +39,7 @@ interface SeedFile {
 
 async function main(): Promise<void> {
   const apiBase = process.env.API_BASE_URL?.replace(/\/$/, '');
-  const userEmail = process.env.EVAL_USER_EMAIL;
+  const idToken = process.env.EVAL_ID_TOKEN;
   const dryRun = process.env.DRY_RUN === '1';
   const onlyIds = process.env.SEED_IDS
     ? new Set(process.env.SEED_IDS.split(',').map((s) => s.trim()).filter(Boolean))
@@ -45,8 +48,8 @@ async function main(): Promise<void> {
   if (!dryRun && !apiBase) {
     throw new Error('API_BASE_URL is required (or set DRY_RUN=1)');
   }
-  if (!userEmail) {
-    throw new Error('EVAL_USER_EMAIL is required');
+  if (!dryRun && !idToken) {
+    throw new Error('EVAL_ID_TOKEN is required (Cognito ID token of the submitting user)');
   }
 
   const seedPath = path.join(__dirname, 'round1-seeds.json');
@@ -63,7 +66,6 @@ async function main(): Promise<void> {
       tone: story.tone,
       setting: story.setting,
       length: story.length,
-      userEmail,
       ...seedFile.defaults,
     };
 
@@ -76,7 +78,10 @@ async function main(): Promise<void> {
     try {
       const res = await fetch(`${apiBase}/stories`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify(body),
       });
       const text = await res.text();

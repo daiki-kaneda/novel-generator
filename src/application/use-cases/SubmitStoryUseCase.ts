@@ -2,14 +2,19 @@ import { Story } from '../../domain/entities/Story';
 import { StoryLength, resolveStoryLength } from '../../domain/value-objects/StoryLength';
 import { StoryRepository } from '../ports/StoryRepository';
 import { RequestQueue } from '../ports/RequestQueue';
+import { UsageAccountRepository } from '../ports/UsageAccountRepository';
+import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface SubmitStoryInput {
+  /** 所有者のCognito `sub`。JWT検証済みのハンドラが設定する（クライアント入力を信用しない）。 */
+  ownerId: string;
   overview: string;
   theme: string;
   characters: string;
   tone?: string;
   /** 地理・時代などの任意ヒント。 */
   setting?: string;
+  /** 完成通知の送付先。JWTのemailクレームからハンドラが設定する。 */
   userEmail: string;
   /** 省略時は true。 */
   requireMetadataApproval?: boolean;
@@ -35,23 +40,30 @@ export class SubmitStoryUseCase {
   constructor(
     private readonly storyRepository: StoryRepository,
     private readonly requestQueue: RequestQueue,
+    private readonly usageAccountRepository: UsageAccountRepository,
   ) {}
 
   async execute(input: SubmitStoryInput): Promise<SubmitStoryOutput> {
     const requireChapterApproval = input.requireChapterApproval ?? false;
-    const story = Story.submit({
-      overview: input.overview,
-      theme: input.theme,
-      characters: input.characters,
-      tone: input.tone,
-      setting: input.setting,
-      userEmail: input.userEmail,
-      requireMetadataApproval: input.requireMetadataApproval ?? true,
-      requirePlanApproval: input.requirePlanApproval ?? true,
-      requireChapterApproval,
-      requireFinalApproval: input.requireFinalApproval ?? !requireChapterApproval,
-      length: resolveStoryLength(input.length),
-    });
+    const story = Story.submit(
+      {
+        overview: input.overview,
+        theme: input.theme,
+        characters: input.characters,
+        tone: input.tone,
+        setting: input.setting,
+        userEmail: input.userEmail,
+        requireMetadataApproval: input.requireMetadataApproval ?? true,
+        requirePlanApproval: input.requirePlanApproval ?? true,
+        requireChapterApproval,
+        requireFinalApproval: input.requireFinalApproval ?? !requireChapterApproval,
+        length: resolveStoryLength(input.length),
+      },
+      input.ownerId,
+    );
+
+    // Story.submit のバリデーション（メールアドレス形式など）を通過した後に予算を確認する。
+    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     await this.storyRepository.createStory(story);
     await this.requestQueue.enqueueStoryRequest(story.storyId);

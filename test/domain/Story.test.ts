@@ -1,5 +1,5 @@
 import { Story } from '../../src/domain/entities/Story';
-import { ValidationError } from '../../src/domain/errors/DomainErrors';
+import { ForbiddenError, ValidationError } from '../../src/domain/errors/DomainErrors';
 
 describe('Story', () => {
   const validRequest = {
@@ -15,7 +15,7 @@ describe('Story', () => {
   };
 
   it('submits successfully with a valid request', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
 
     expect(story.status).toBe('SUBMITTED');
     expect(story.storyId).toHaveLength(36);
@@ -29,6 +29,7 @@ describe('Story', () => {
   it('defaults requireFinalApproval to the inverse of requireChapterApproval on restore', () => {
     const withChapter = Story.restore({
       storyId: '00000000-0000-4000-8000-000000000001',
+      ownerId: 'owner-1',
       status: 'SUBMITTED',
       request: {
         overview: 'o',
@@ -48,6 +49,7 @@ describe('Story', () => {
 
     const withoutChapter = Story.restore({
       storyId: '00000000-0000-4000-8000-000000000002',
+      ownerId: 'owner-1',
       status: 'SUBMITTED',
       request: {
         overview: 'o',
@@ -67,7 +69,7 @@ describe('Story', () => {
   });
 
   it('tracks metadata approval wait state', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
 
     story.awaitApproval('metadata', 'metadata-token');
     expect(story.status).toBe('AWAITING_METADATA_APPROVAL');
@@ -76,7 +78,7 @@ describe('Story', () => {
   });
 
   it('tracks chapter approval wait state with the target chapter index', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
 
     story.awaitApproval('chapter', 'chapter-token', 2);
     expect(story.status).toBe('AWAITING_CHAPTER_APPROVAL');
@@ -89,17 +91,23 @@ describe('Story', () => {
   });
 
   it('rejects submission when a required field is missing', () => {
-    expect(() => Story.submit({ ...validRequest, overview: '' })).toThrow(ValidationError);
-  });
-
-  it('rejects submission when the email format is invalid', () => {
-    expect(() => Story.submit({ ...validRequest, userEmail: 'not-an-email' })).toThrow(
+    expect(() => Story.submit({ ...validRequest, overview: '' }, 'owner-1')).toThrow(
       ValidationError,
     );
   });
 
+  it('rejects submission when the email format is invalid', () => {
+    expect(() =>
+      Story.submit({ ...validRequest, userEmail: 'not-an-email' }, 'owner-1'),
+    ).toThrow(ValidationError);
+  });
+
+  it('rejects submission when ownerId is missing', () => {
+    expect(() => Story.submit(validRequest, '')).toThrow(ValidationError);
+  });
+
   it('tracks the approval wait state and clears it after a decision', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
 
     story.awaitApproval('plan', 'task-token-123');
     expect(story.status).toBe('AWAITING_PLAN_APPROVAL');
@@ -112,7 +120,7 @@ describe('Story', () => {
   });
 
   it('marks the story completed with the final S3 key and drops a stale URL', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
 
     story.complete(`stories/${story.storyId}/final.txt`);
 
@@ -125,6 +133,7 @@ describe('Story', () => {
   it('falls back to the deterministic key for legacy completed stories', () => {
     const story = Story.restore({
       storyId: '00000000-0000-4000-8000-000000000099',
+      ownerId: 'owner-1',
       status: 'COMPLETED',
       request: validRequest,
       finalUrl: 'https://example.com/expired',
@@ -137,12 +146,12 @@ describe('Story', () => {
   });
 
   it('does not resolve a final key unless the story is completed', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
     expect(story.resolveFinalKey()).toBeUndefined();
   });
 
   it('records a workflow failure and clears a stale approval token', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
     story.bindExecution('arn:aws:states:us-east-1:123:execution:novel:exec-1');
     story.awaitApproval('plan', 'stale-token');
 
@@ -157,7 +166,7 @@ describe('Story', () => {
   });
 
   it('does not allow marking a completed story as failed', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
     story.complete(`stories/${story.storyId}/final.txt`);
 
     expect(() => story.fail('FAILED', '生成ワークフローが失敗しました')).toThrow(ValidationError);
@@ -165,7 +174,7 @@ describe('Story', () => {
   });
 
   it('clears failure fields when moving to a new status or binding a new execution', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
     story.fail('FAILED', '生成ワークフローが失敗しました');
 
     story.moveTo('CHAPTERS_GENERATING');
@@ -180,7 +189,18 @@ describe('Story', () => {
   });
 
   it('rejects moveTo(FAILED) so failures go through fail()', () => {
-    const story = Story.submit(validRequest);
+    const story = Story.submit(validRequest, 'owner-1');
     expect(() => story.moveTo('FAILED')).toThrow(ValidationError);
+  });
+
+  it('exposes the owner and allows the owner to pass an ownership check', () => {
+    const story = Story.submit(validRequest, 'owner-1');
+    expect(story.ownerId).toBe('owner-1');
+    expect(() => story.assertOwnedBy('owner-1')).not.toThrow();
+  });
+
+  it('rejects an ownership check from a non-owner caller', () => {
+    const story = Story.submit(validRequest, 'owner-1');
+    expect(() => story.assertOwnedBy('someone-else')).toThrow(ForbiddenError);
   });
 });

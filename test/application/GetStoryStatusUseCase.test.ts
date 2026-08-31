@@ -3,22 +3,26 @@ import { Plan, PlanSnapshot } from '../../src/domain/entities/Plan';
 import { Chapter } from '../../src/domain/entities/Chapter';
 import { Story } from '../../src/domain/entities/Story';
 import { StoryMetadata } from '../../src/domain/entities/StoryMetadata';
+import { ForbiddenError } from '../../src/domain/errors/DomainErrors';
 import { FakeStoryRepository, SAMPLE_PLAN_CHARACTERS } from './support/fakes';
 
 describe('GetStoryStatusUseCase', () => {
   it('returns planSnapshots in afterChapterIndex order', async () => {
     const repo = new FakeStoryRepository();
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
     await repo.saveMetadata(
       story.storyId,
@@ -71,7 +75,7 @@ describe('GetStoryStatusUseCase', () => {
     );
 
     const useCase = new GetStoryStatusUseCase(repo);
-    const status = await useCase.execute(story.storyId);
+    const status = await useCase.execute(story.storyId, story.ownerId);
 
     expect(status.planSnapshots).toHaveLength(2);
     expect(status.requireFinalApproval).toBe(true);
@@ -84,24 +88,50 @@ describe('GetStoryStatusUseCase', () => {
 
   it('exposes failureKind and failureReason when the story failed', async () => {
     const repo = new FakeStoryRepository();
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     story.fail('FAILED', '生成ワークフローが失敗しました');
     await repo.createStory(story);
 
-    const status = await new GetStoryStatusUseCase(repo).execute(story.storyId);
+    const status = await new GetStoryStatusUseCase(repo).execute(story.storyId, story.ownerId);
 
     expect(status.status).toBe('FAILED');
     expect(status.failureKind).toBe('FAILED');
     expect(status.failureReason).toBe('生成ワークフローが失敗しました');
+  });
+
+  it('rejects when the caller is not the story owner', async () => {
+    const repo = new FakeStoryRepository();
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
+    await repo.createStory(story);
+
+    await expect(
+      new GetStoryStatusUseCase(repo).execute(story.storyId, 'someone-else'),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

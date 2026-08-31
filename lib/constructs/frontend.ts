@@ -9,6 +9,10 @@ import { Construct } from 'constructs';
 export interface NovelFrontendProps {
   /** Reactアプリからのfetch先となるHTTP APIのベースURL（末尾スラッシュなし）。 */
   apiEndpoint: string;
+  /** ユーザー認証用 Cognito User Pool ID。 */
+  userPoolId: string;
+  /** フロントエンド（SPA）用 Cognito User Pool Client ID。 */
+  userPoolClientId: string;
 }
 
 const FRONTEND_DIST_DIR = path.join(__dirname, '..', '..', 'frontend', 'dist');
@@ -35,7 +39,7 @@ export class NovelFrontend extends Construct {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    // 検索エンジンにインデックスさせない（storyIdがURLに含まれ、認証がないため）。
+    // 検索エンジンにインデックスさせない（storyIdがURLに含まれる、ログイン必須のプライベートなアプリのため）。
     const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'ResponseHeadersPolicy', {
       customHeadersBehavior: {
         customHeaders: [{ header: 'X-Robots-Tag', value: 'noindex, nofollow', override: true }],
@@ -80,8 +84,12 @@ export class NovelFrontend extends Construct {
     new s3deploy.BucketDeployment(this, 'DeploySite', {
       sources: [
         s3deploy.Source.asset(FRONTEND_DIST_DIR),
-        // apiEndpointはデプロイ時にしか確定しないため、ビルド物とは別にランタイム設定として配置する。
-        s3deploy.Source.jsonData('config.json', { apiBaseUrl: props.apiEndpoint }),
+        // apiEndpointやCognito IDはデプロイ時にしか確定しないため、ビルド物とは別にランタイム設定として配置する。
+        s3deploy.Source.jsonData('config.json', {
+          apiBaseUrl: props.apiEndpoint,
+          cognitoUserPoolId: props.userPoolId,
+          cognitoUserPoolClientId: props.userPoolClientId,
+        }),
       ],
       destinationBucket: this.siteBucket,
       distribution: this.distribution,

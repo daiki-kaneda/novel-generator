@@ -1,9 +1,11 @@
 import { getRuntimeConfig } from './runtimeConfig';
+import { getAuthToken } from './authToken';
 import type {
   ChapterContentOutput,
   FinalContentOutput,
   DecisionInput,
   FinalDecisionInput,
+  ListMyStoriesOutput,
   StartRevisionInput,
   StartRevisionOutput,
   StoryStatusOutput,
@@ -24,10 +26,12 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { apiBaseUrl } = getRuntimeConfig();
+  const token = await getAuthToken();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
@@ -49,6 +53,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /** POST /stories */
 export function submitStory(input: SubmitStoryInput): Promise<SubmitStoryOutput> {
   return request('/stories', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** GET /me/stories */
+export function listMyStories(): Promise<ListMyStoriesOutput> {
+  return request('/me/stories');
 }
 
 /** GET /stories/{storyId} */

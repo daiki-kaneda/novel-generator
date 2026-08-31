@@ -57,7 +57,11 @@ export class GenerateChapterUseCase {
     }
 
     const metadataProps = metadata.toProps();
-    const callContext = { storyId: input.storyId, chapterIndex: input.chapterIndex };
+    const callContext = {
+      storyId: input.storyId,
+      chapterIndex: input.chapterIndex,
+      userEmail: story.request.userEmail,
+    };
     const activeFacts = await this.worldStateRepository.listActiveFacts(
       input.storyId,
       input.chapterIndex,
@@ -189,6 +193,7 @@ export class GenerateChapterUseCase {
       completedSummary: extracted.sceneSummary,
       length: story.request.length,
       activeFacts,
+      userEmail: story.request.userEmail,
     });
   }
 
@@ -279,6 +284,7 @@ export class GenerateChapterUseCase {
     completedSummary: string;
     length: StoryLength;
     activeFacts: AtomicFact[];
+    userEmail: string;
   }): Promise<void> {
     const futureChapters = args.plan.chapters
       .filter((outline) => outline.index > args.completedChapterIndex)
@@ -326,6 +332,7 @@ export class GenerateChapterUseCase {
       callContext: {
         storyId: args.storyId,
         chapterIndex: args.completedChapterIndex,
+        userEmail: args.userEmail,
       },
     });
 

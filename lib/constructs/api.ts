@@ -2,19 +2,24 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Stack } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { Construct } from 'constructs';
 import { createHandlerFunction } from './nodeFunction';
 
 export interface NovelApiProps {
   storyTable: dynamodb.ITable;
+  usageTable: dynamodb.ITable;
   contentBucket: s3.IBucket;
   storyRequestQueueUrl: string;
   storyRequestQueueArn: string;
   finalUrlExpirySeconds: number;
   stateMachine: sfn.IStateMachine;
+  userPool: cognito.IUserPool;
+  userPoolClient: cognito.IUserPoolClient;
 }
 
 /**
@@ -40,10 +45,12 @@ export class NovelApi extends Construct {
       description: 'POST /stories: 物語の概要・テーマ・登場人物を受け付ける',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         STORY_REQUEST_QUEUE_URL: props.storyRequestQueueUrl,
       },
     });
     props.storyTable.grantReadWriteData(submitStoryFn);
+    props.usageTable.grantReadData(submitStoryFn);
     submitStoryFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['sqs:SendMessage'],
@@ -59,6 +66,15 @@ export class NovelApi extends Construct {
       },
     });
     props.storyTable.grantReadData(getStoryStatusFn);
+
+    const listMyStoriesFn = createHandlerFunction(this, 'ListMyStoriesFunction', {
+      entry: 'listMyStories.ts',
+      description: 'GET /me/stories: 認証済みユーザー自身が送信した物語一覧を取得する',
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+      },
+    });
+    props.storyTable.grantReadData(listMyStoriesFn);
 
     const getChapterContentFn = createHandlerFunction(this, 'GetChapterContentFunction', {
       entry: 'getChapterContent.ts',
@@ -89,9 +105,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/metadata/decision: メタデータ（設定書）の承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(metadataDecisionFn);
+    props.usageTable.grantReadData(metadataDecisionFn);
     metadataDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const planDecisionFn = createHandlerFunction(this, 'PlanDecisionFunction', {
@@ -99,9 +117,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/plan/decision: プランの承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(planDecisionFn);
+    props.usageTable.grantReadData(planDecisionFn);
     planDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const chapterDecisionFn = createHandlerFunction(this, 'ChapterDecisionFunction', {
@@ -109,9 +129,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/chapters/{chapterIndex}/decision: 章の承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(chapterDecisionFn);
+    props.usageTable.grantReadData(chapterDecisionFn);
     chapterDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const finalDecisionFn = createHandlerFunction(this, 'FinalDecisionFunction', {
@@ -119,9 +141,11 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/final/decision: 最終原稿の承認/拒否',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
       },
     });
     props.storyTable.grantReadWriteData(finalDecisionFn);
+    props.usageTable.grantReadData(finalDecisionFn);
     finalDecisionFn.addToRolePolicy(sendTaskDecisionStatement);
 
     const startRevisionFn = createHandlerFunction(this, 'StartRevisionFunction', {
@@ -129,10 +153,12 @@ export class NovelApi extends Construct {
       description: 'POST /stories/{storyId}/revisions: 部分再生成（改訂・復旧）を開始する',
       environment: {
         STORY_TABLE_NAME: props.storyTable.tableName,
+        USAGE_TABLE_NAME: props.usageTable.tableName,
         STATE_MACHINE_ARN: props.stateMachine.stateMachineArn,
       },
     });
     props.storyTable.grantReadWriteData(startRevisionFn);
+    props.usageTable.grantReadData(startRevisionFn);
     props.stateMachine.grantStartExecution(startRevisionFn);
     const stack = Stack.of(this);
     startRevisionFn.addToRolePolicy(
@@ -149,54 +175,75 @@ export class NovelApi extends Construct {
       corsPreflight: {
         allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST],
         allowOrigins: ['*'],
-        allowHeaders: ['content-type'],
+        allowHeaders: ['content-type', 'authorization'],
       },
+    });
+
+    // 全ルートを認証必須にする。ユーザーはCognitoでサインアップ/サインインし、
+    // 発行されたIDトークンを`Authorization: Bearer <token>`で送る。
+    const authorizer = new HttpUserPoolAuthorizer('UserPoolAuthorizer', props.userPool, {
+      userPoolClients: [props.userPoolClient],
     });
 
     this.httpApi.addRoutes({
       path: '/stories',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('SubmitStoryIntegration', submitStoryFn),
+      authorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/me/stories',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('ListMyStoriesIntegration', listMyStoriesFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetStoryStatusIntegration', getStoryStatusFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/chapters/{chapterIndex}/content',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetChapterContentIntegration', getChapterContentFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/final/content',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetFinalContentIntegration', getFinalContentFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/metadata/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('MetadataDecisionIntegration', metadataDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/plan/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('PlanDecisionIntegration', planDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/chapters/{chapterIndex}/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('ChapterDecisionIntegration', chapterDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/final/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('FinalDecisionIntegration', finalDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/revisions',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('StartRevisionIntegration', startRevisionFn),
+      authorizer,
     });
   }
 }

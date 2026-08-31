@@ -2,9 +2,12 @@ import { ApprovalDecision, ApprovalStage } from '../../domain/value-objects/Appr
 import { ValidationError } from '../../domain/errors/DomainErrors';
 import { StoryRepository } from '../ports/StoryRepository';
 import { ApprovalGateway } from '../ports/ApprovalGateway';
+import { UsageAccountRepository } from '../ports/UsageAccountRepository';
+import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface DecideApprovalInput {
   storyId: string;
+  callerId: string;
   /** どの承認段階に対する決定か（呼び出し元のAPIエンドポイントが固定する）。 */
   expectedStage: ApprovalStage;
   approved: boolean;
@@ -27,16 +30,21 @@ export class DecideApprovalUseCase {
   constructor(
     private readonly storyRepository: StoryRepository,
     private readonly approvalGateway: ApprovalGateway,
+    private readonly usageAccountRepository: UsageAccountRepository,
   ) {}
 
   async execute(input: DecideApprovalInput): Promise<void> {
     const story = await this.storyRepository.getStory(input.storyId);
+    story.assertOwnedBy(input.callerId);
 
     if (story.taskStage !== input.expectedStage || !story.currentTaskToken) {
       throw new ValidationError(
         `Story ${input.storyId} is not currently awaiting a "${input.expectedStage}" approval decision`,
       );
     }
+
+    // 承認・拒否のいずれも次工程の生成（追加コスト）につながるため、決定送信前に予算を確認する。
+    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     if (input.expectedStage === 'chapter') {
       if (input.chapterIndex === undefined) {

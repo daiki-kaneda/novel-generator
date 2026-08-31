@@ -9,6 +9,7 @@ import { Construct } from 'constructs';
  */
 export class NovelStorage extends Construct {
   readonly storyTable: dynamodb.Table;
+  readonly usageTable: dynamodb.Table;
   readonly contentBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string) {
@@ -16,6 +17,24 @@ export class NovelStorage extends Construct {
 
     this.storyTable = new dynamodb.Table(this, 'StoryTable', {
       partitionKey: { name: 'storyId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'recordType', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // 「自分の物語一覧」用。META レコードのみが ownerId/createdAt を持つため、
+    // METADATA/PLAN/CHAPTER 等の他レコード種別は自然にこのGSIから除外される（スパースインデックス）。
+    this.storyTable.addGlobalSecondaryIndex({
+      indexName: 'OwnerIndex',
+      partitionKey: { name: 'ownerId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    // メールアドレス（認証必須にしないためのアカウントキー）単位のプラン割当と月次コスト集計。
+    // PK=accountEmail / SK=recordType（"PROFILE" | "MONTHLY#<yyyy-MM>"）。
+    this.usageTable = new dynamodb.Table(this, 'UsageTable', {
+      partitionKey: { name: 'accountEmail', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'recordType', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },

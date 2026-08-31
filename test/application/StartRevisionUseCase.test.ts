@@ -1,9 +1,14 @@
 import { StartRevisionUseCase } from '../../src/application/use-cases/StartRevisionUseCase';
 import { Plan } from '../../src/domain/entities/Plan';
 import { Story } from '../../src/domain/entities/Story';
-import { ValidationError } from '../../src/domain/errors/DomainErrors';
+import {
+  BudgetExceededError,
+  ForbiddenError,
+  ValidationError,
+} from '../../src/domain/errors/DomainErrors';
 import {
   FakeStoryRepository,
+  FakeUsageAccountRepository,
   FakeWorkflowStarter,
   SAMPLE_PLAN_CHARACTERS,
 } from './support/fakes';
@@ -12,17 +17,20 @@ async function buildStoryWithPlan(
   repo: FakeStoryRepository,
   options?: { bindArn?: string; status?: 'COMPLETED' | 'AWAITING_FINAL_APPROVAL' },
 ): Promise<Story> {
-  const story = Story.submit({
-    overview: 'o',
-    theme: 't',
-    characters: 'c',
-    userEmail: 'u@example.com',
-    requireMetadataApproval: false,
-    requirePlanApproval: false,
-    requireChapterApproval: false,
-    requireFinalApproval: true,
-    length: 'short',
-  });
+  const story = Story.submit(
+    {
+      overview: 'o',
+      theme: 't',
+      characters: 'c',
+      userEmail: 'u@example.com',
+      requireMetadataApproval: false,
+      requirePlanApproval: false,
+      requireChapterApproval: false,
+      requireFinalApproval: true,
+      length: 'short',
+    },
+    'owner-1',
+  );
   if (options?.status === 'AWAITING_FINAL_APPROVAL') {
     story.moveTo('AWAITING_FINAL_APPROVAL');
   } else {
@@ -53,10 +61,11 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo);
-    const useCase = new StartRevisionUseCase(repo, starter);
+  const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
-    const output = await useCase.execute({
+  const output = await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       rewriteFromChapterIndex: 2,
       feedback: 'Fix the middle act',
     });
@@ -80,10 +89,11 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo, { status: 'AWAITING_FINAL_APPROVAL' });
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     const output = await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       rewriteFromChapterIndex: 3,
       feedback: 'Regenerate unfinished chapter',
     });
@@ -98,11 +108,12 @@ describe('StartRevisionUseCase', () => {
     const lockedArn = 'arn:aws:states:us-east-1:123:execution:novel:locked';
     const story = await buildStoryWithPlan(repo, { bindArn: lockedArn });
     starter.executionStatuses.set(lockedArn, 'RUNNING');
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
         storyId: story.storyId,
+        callerId: story.ownerId,
         rewriteFromChapterIndex: 1,
         feedback: 'redo',
       }),
@@ -120,10 +131,11 @@ describe('StartRevisionUseCase', () => {
     });
     starter.executionStatuses.set(staleArn, 'FAILED');
     starter.nextExecutionArn = 'arn:aws:states:us-east-1:123:execution:novel:new';
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     const output = await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       rewriteFromChapterIndex: 2,
       feedback: 'recover after finalize failure',
     });
@@ -135,24 +147,28 @@ describe('StartRevisionUseCase', () => {
   it('rejects when plan is missing', async () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
-    const story = Story.submit({
-      overview: 'o',
-      theme: 't',
-      characters: 'c',
-      userEmail: 'u@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'u@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     story.complete(`stories/${story.storyId}/final.txt`);
     await repo.createStory(story);
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
         storyId: story.storyId,
+        callerId: story.ownerId,
         rewriteFromChapterIndex: 1,
         feedback: 'redo',
       }),
@@ -164,11 +180,12 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo);
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
         storyId: story.storyId,
+        callerId: story.ownerId,
         rewriteFromChapterIndex: 1,
         feedback: '   ',
       }),
@@ -180,15 +197,52 @@ describe('StartRevisionUseCase', () => {
     const repo = new FakeStoryRepository();
     const starter = new FakeWorkflowStarter();
     const story = await buildStoryWithPlan(repo);
-    const useCase = new StartRevisionUseCase(repo, starter);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
 
     await expect(
       useCase.execute({
         storyId: story.storyId,
+        callerId: story.ownerId,
         rewriteFromChapterIndex: 9,
         feedback: 'too far',
       }),
     ).rejects.toBeInstanceOf(ValidationError);
+    expect(starter.started).toHaveLength(0);
+  });
+
+  it('rejects when the story owner has exhausted their monthly usage budget', async () => {
+    const repo = new FakeStoryRepository();
+    const starter = new FakeWorkflowStarter();
+    const usageAccountRepository = new FakeUsageAccountRepository();
+    const story = await buildStoryWithPlan(repo);
+    usageAccountRepository.seedCurrentMonthUsage(story.request.userEmail, { totalCostUsd: 2 });
+    const useCase = new StartRevisionUseCase(repo, starter, usageAccountRepository);
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        callerId: story.ownerId,
+        rewriteFromChapterIndex: 1,
+        feedback: 'redo',
+      }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(starter.started).toHaveLength(0);
+  });
+
+  it('rejects when the caller is not the story owner', async () => {
+    const repo = new FakeStoryRepository();
+    const starter = new FakeWorkflowStarter();
+    const story = await buildStoryWithPlan(repo);
+    const useCase = new StartRevisionUseCase(repo, starter, new FakeUsageAccountRepository());
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        callerId: 'someone-else',
+        rewriteFromChapterIndex: 1,
+        feedback: 'redo',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
     expect(starter.started).toHaveLength(0);
   });
 });

@@ -22,7 +22,9 @@ import {
   RealignFuturePlanInput,
   RealignedFuturePlan,
 } from '../../application/ports/NovelTextGenerator';
+import { UsageRecorder } from '../../application/ports/UsageAccountRepository';
 import { STORY_LENGTH_PRESETS, StoryLength } from '../../domain/value-objects/StoryLength';
+import { calculateUsageCostUsd } from '../../domain/value-objects/BedrockPricing';
 import {
   ATOMIC_FACTS_EXTRACTION_SCHEMA,
   CHAPTER_SUMMARY_SCHEMA,
@@ -83,6 +85,8 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
   constructor(
     private readonly client: BedrockRuntimeClient,
     private readonly modelId: string,
+    /** 未指定時は使用量記録をスキップする（テスト・後方互換のため任意）。 */
+    private readonly usageRecorder?: UsageRecorder,
   ) {}
 
   async generateMetadata(input: GenerateMetadataInput): Promise<GeneratedMetadata> {
@@ -560,6 +564,13 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         structuredOutput,
       });
 
+      await this.recordUsageBestEffort(
+        phase,
+        callContext,
+        result.usage?.inputTokens ?? 0,
+        result.usage?.outputTokens ?? 0,
+      );
+
       return text;
     } catch (error) {
       const err = error as Error;
@@ -578,6 +589,34 @@ export class BedrockNovelTextGenerator implements NovelTextGenerator {
         structuredOutput,
       });
       throw error;
+    }
+  }
+
+  /**
+   * 使用量記録はベストエフォート。記録に失敗しても生成処理自体は継続する
+   * （SES送信失敗時にワークフローを止めない既存方針と同じ考え方）。
+   */
+  private async recordUsageBestEffort(
+    phase: BedrockConversePhase,
+    callContext: LlmCallContext | undefined,
+    inputTokens: number,
+    outputTokens: number,
+  ): Promise<void> {
+    if (!this.usageRecorder || !callContext?.userEmail) {
+      return;
+    }
+    try {
+      await this.usageRecorder.recordUsage(callContext.userEmail, {
+        storyId: callContext.storyId,
+        chapterIndex: callContext.chapterIndex,
+        phase,
+        modelId: this.modelId,
+        inputTokens,
+        outputTokens,
+        costUsd: calculateUsageCostUsd(this.modelId, inputTokens, outputTokens),
+      });
+    } catch (error) {
+      console.error('Failed to record Bedrock usage', error);
     }
   }
 

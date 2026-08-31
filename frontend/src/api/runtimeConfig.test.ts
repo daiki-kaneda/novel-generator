@@ -6,12 +6,18 @@ describe('runtimeConfig', () => {
     vi.resetModules();
   });
 
-  it('loads apiBaseUrl and strips a trailing slash', async () => {
+  const validConfig = {
+    apiBaseUrl: 'https://api.example.com/',
+    cognitoUserPoolId: 'ap-northeast-1_abc123',
+    cognitoUserPoolClientId: 'client-id-123',
+  };
+
+  it('loads config and strips a trailing slash from apiBaseUrl', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ apiBaseUrl: 'https://api.example.com/' }),
+        json: () => Promise.resolve(validConfig),
       }),
     );
     const { loadRuntimeConfig, getRuntimeConfig } = await import('./runtimeConfig');
@@ -19,6 +25,8 @@ describe('runtimeConfig', () => {
     const config = await loadRuntimeConfig();
 
     expect(config.apiBaseUrl).toBe('https://api.example.com');
+    expect(config.cognitoUserPoolId).toBe('ap-northeast-1_abc123');
+    expect(config.cognitoUserPoolClientId).toBe('client-id-123');
     expect(getRuntimeConfig().apiBaseUrl).toBe('https://api.example.com');
   });
 
@@ -27,12 +35,25 @@ describe('runtimeConfig', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({}),
+        json: () => Promise.resolve({ ...validConfig, apiBaseUrl: undefined }),
       }),
     );
     const { loadRuntimeConfig } = await import('./runtimeConfig');
 
     await expect(loadRuntimeConfig()).rejects.toThrow('apiBaseUrl');
+  });
+
+  it('rejects with a helpful message when cognitoUserPoolId is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ...validConfig, cognitoUserPoolId: undefined }),
+      }),
+    );
+    const { loadRuntimeConfig } = await import('./runtimeConfig');
+
+    await expect(loadRuntimeConfig()).rejects.toThrow('cognitoUserPoolId');
   });
 
   it('rejects when config.json cannot be fetched', async () => {
