@@ -3,17 +3,20 @@ import { Story } from '../../src/domain/entities/Story';
 import { FakeNotificationSender, FakeStoryRepository } from './support/fakes';
 
 function submitStory() {
-  return Story.submit({
-    overview: 'overview',
-    theme: 'theme',
-    characters: 'characters',
-    userEmail: 'user@example.com',
-    requireMetadataApproval: true,
-    requirePlanApproval: true,
-    requireChapterApproval: false,
-    requireFinalApproval: true,
-    length: 'short',
-  });
+  return Story.submit(
+    {
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      userEmail: 'user@example.com',
+      requireMetadataApproval: true,
+      requirePlanApproval: true,
+      requireChapterApproval: false,
+      requireFinalApproval: true,
+      length: 'short',
+    },
+    'owner-1',
+  );
 }
 
 describe('RequestApprovalUseCase', () => {

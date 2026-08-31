@@ -23,6 +23,14 @@ export class NovelStorage extends Construct {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // 「自分の物語一覧」用。META レコードのみが ownerId/createdAt を持つため、
+    // METADATA/PLAN/CHAPTER 等の他レコード種別は自然にこのGSIから除外される（スパースインデックス）。
+    this.storyTable.addGlobalSecondaryIndex({
+      indexName: 'OwnerIndex',
+      partitionKey: { name: 'ownerId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
     // メールアドレス（認証必須にしないためのアカウントキー）単位のプラン割当と月次コスト集計。
     // PK=accountEmail / SK=recordType（"PROFILE" | "MONTHLY#<yyyy-MM>"）。
     this.usageTable = new dynamodb.Table(this, 'UsageTable', {

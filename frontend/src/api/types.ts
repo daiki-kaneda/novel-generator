@@ -124,7 +124,6 @@ export interface SubmitStoryInput {
   characters: string;
   tone?: string;
   setting?: string;
-  userEmail: string;
   requireMetadataApproval?: boolean;
   requirePlanApproval?: boolean;
   requireChapterApproval?: boolean;
@@ -134,6 +133,19 @@ export interface SubmitStoryInput {
 
 export interface SubmitStoryOutput {
   storyId: string;
+}
+
+export interface MyStorySummary {
+  storyId: string;
+  status: StoryStatus;
+  overview: string;
+  theme: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListMyStoriesOutput {
+  stories: MyStorySummary[];
 }
 
 export interface ChapterContentOutput {

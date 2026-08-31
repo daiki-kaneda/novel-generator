@@ -7,6 +7,7 @@ import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface DecideApprovalInput {
   storyId: string;
+  callerId: string;
   /** どの承認段階に対する決定か（呼び出し元のAPIエンドポイントが固定する）。 */
   expectedStage: ApprovalStage;
   approved: boolean;
@@ -34,6 +35,7 @@ export class DecideApprovalUseCase {
 
   async execute(input: DecideApprovalInput): Promise<void> {
     const story = await this.storyRepository.getStory(input.storyId);
+    story.assertOwnedBy(input.callerId);
 
     if (story.taskStage !== input.expectedStage || !story.currentTaskToken) {
       throw new ValidationError(

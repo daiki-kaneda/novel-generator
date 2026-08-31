@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import { NovelStorage } from './constructs/storage';
 import { NovelWorkflow } from './constructs/workflow';
 import { NovelIngestion } from './constructs/ingestion';
+import { NovelAuth } from './constructs/auth';
 import { NovelApi } from './constructs/api';
 import { NovelFrontend } from './constructs/frontend';
 import { appConfig } from './config';
@@ -35,6 +36,8 @@ export class NovelGeneratorStack extends cdk.Stack {
       stateMachine: workflow.stateMachine,
     });
 
+    const auth = new NovelAuth(this, 'Auth');
+
     const api = new NovelApi(this, 'Api', {
       storyTable: storage.storyTable,
       usageTable: storage.usageTable,
@@ -43,10 +46,14 @@ export class NovelGeneratorStack extends cdk.Stack {
       storyRequestQueueArn: ingestion.requestQueue.queueArn,
       finalUrlExpirySeconds: appConfig.novel.finalUrlExpirySeconds,
       stateMachine: workflow.stateMachine,
+      userPool: auth.userPool,
+      userPoolClient: auth.userPoolClient,
     });
 
     const frontend = new NovelFrontend(this, 'Frontend', {
       apiEndpoint: api.httpApi.apiEndpoint,
+      userPoolId: auth.userPool.userPoolId,
+      userPoolClientId: auth.userPoolClient.userPoolClientId,
     });
     // Workflow は Frontend より先に作るため、配信URLは後付けで注入する（循環依存を避ける）。
     workflow.requestApprovalFn.addEnvironment(
@@ -77,6 +84,14 @@ export class NovelGeneratorStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'StoryRequestQueueUrl', {
       value: ingestion.requestQueue.queueUrl,
+    });
+    new cdk.CfnOutput(this, 'UserPoolId', {
+      description: 'ユーザー認証用 Cognito User Pool ID',
+      value: auth.userPool.userPoolId,
+    });
+    new cdk.CfnOutput(this, 'UserPoolClientId', {
+      description: 'フロントエンド（SPA）用 Cognito User Pool Client ID',
+      value: auth.userPoolClient.userPoolClientId,
     });
   }
 }

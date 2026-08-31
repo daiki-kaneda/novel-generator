@@ -4,6 +4,7 @@ import { ChapterContentStorage } from '../ports/ChapterContentStorage';
 
 export interface GetFinalContentInput {
   storyId: string;
+  callerId: string;
 }
 
 export interface GetFinalContentOutput {
@@ -26,6 +27,7 @@ export class GetFinalContentUseCase {
 
   async execute(input: GetFinalContentInput): Promise<GetFinalContentOutput> {
     const story = await this.storyRepository.getStory(input.storyId);
+    story.assertOwnedBy(input.callerId);
     const finalKey = story.resolveFinalKey();
     if (!finalKey) {
       if (story.status !== 'COMPLETED') {

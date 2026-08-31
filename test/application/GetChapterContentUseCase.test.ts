@@ -1,24 +1,27 @@
 import { GetChapterContentUseCase } from '../../src/application/use-cases/GetChapterContentUseCase';
 import { Story } from '../../src/domain/entities/Story';
 import { Chapter } from '../../src/domain/entities/Chapter';
-import { NotFoundError } from '../../src/domain/errors/DomainErrors';
+import { ForbiddenError, NotFoundError } from '../../src/domain/errors/DomainErrors';
 import { FakeStoryRepository, FakeChapterContentStorage } from './support/fakes';
 
 describe('GetChapterContentUseCase', () => {
   it('returns a presigned URL for a generated chapter', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
 
     const s3Key = await storage.saveChapterText(story.storyId, 1, 'chapter body');
@@ -33,7 +36,11 @@ describe('GetChapterContentUseCase', () => {
     ]);
 
     const useCase = new GetChapterContentUseCase(repo, storage, 3600);
-    const result = await useCase.execute({ storyId: story.storyId, chapterIndex: 1 });
+    const result = await useCase.execute({
+      storyId: story.storyId,
+      chapterIndex: 1,
+      callerId: story.ownerId,
+    });
 
     expect(result.title).toBe('Chapter 1');
     expect(result.content).toBe('chapter body');
@@ -45,17 +52,20 @@ describe('GetChapterContentUseCase', () => {
   it('throws NotFoundError when the chapter has no content yet', async () => {
     const repo = new FakeStoryRepository();
     const storage = new FakeChapterContentStorage();
-    const story = Story.submit({
-      overview: 'overview',
-      theme: 'theme',
-      characters: 'characters',
-      userEmail: 'user@example.com',
-      requireMetadataApproval: true,
-      requirePlanApproval: true,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     await repo.createStory(story);
     await repo.initializeChapters(story.storyId, [
       Chapter.fromOutline({ index: 1, title: 'Chapter 1', outline: 'outline' }),
@@ -63,7 +73,35 @@ describe('GetChapterContentUseCase', () => {
 
     const useCase = new GetChapterContentUseCase(repo, storage, 3600);
     await expect(
-      useCase.execute({ storyId: story.storyId, chapterIndex: 1 }),
+      useCase.execute({ storyId: story.storyId, chapterIndex: 1, callerId: story.ownerId }),
     ).rejects.toThrow(NotFoundError);
+  });
+
+  it('throws ForbiddenError when the caller is not the story owner', async () => {
+    const repo = new FakeStoryRepository();
+    const storage = new FakeChapterContentStorage();
+    const story = Story.submit(
+      {
+        overview: 'overview',
+        theme: 'theme',
+        characters: 'characters',
+        userEmail: 'user@example.com',
+        requireMetadataApproval: true,
+        requirePlanApproval: true,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
+    await repo.createStory(story);
+    await repo.initializeChapters(story.storyId, [
+      Chapter.fromOutline({ index: 1, title: 'Chapter 1', outline: 'outline' }),
+    ]);
+
+    const useCase = new GetChapterContentUseCase(repo, storage, 3600);
+    await expect(
+      useCase.execute({ storyId: story.storyId, chapterIndex: 1, callerId: 'someone-else' }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

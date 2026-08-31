@@ -2,9 +2,11 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Stack } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { Construct } from 'constructs';
 import { createHandlerFunction } from './nodeFunction';
 
@@ -16,6 +18,8 @@ export interface NovelApiProps {
   storyRequestQueueArn: string;
   finalUrlExpirySeconds: number;
   stateMachine: sfn.IStateMachine;
+  userPool: cognito.IUserPool;
+  userPoolClient: cognito.IUserPoolClient;
 }
 
 /**
@@ -62,6 +66,15 @@ export class NovelApi extends Construct {
       },
     });
     props.storyTable.grantReadData(getStoryStatusFn);
+
+    const listMyStoriesFn = createHandlerFunction(this, 'ListMyStoriesFunction', {
+      entry: 'listMyStories.ts',
+      description: 'GET /me/stories: 認証済みユーザー自身が送信した物語一覧を取得する',
+      environment: {
+        STORY_TABLE_NAME: props.storyTable.tableName,
+      },
+    });
+    props.storyTable.grantReadData(listMyStoriesFn);
 
     const getChapterContentFn = createHandlerFunction(this, 'GetChapterContentFunction', {
       entry: 'getChapterContent.ts',
@@ -162,54 +175,75 @@ export class NovelApi extends Construct {
       corsPreflight: {
         allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST],
         allowOrigins: ['*'],
-        allowHeaders: ['content-type'],
+        allowHeaders: ['content-type', 'authorization'],
       },
+    });
+
+    // 全ルートを認証必須にする。ユーザーはCognitoでサインアップ/サインインし、
+    // 発行されたIDトークンを`Authorization: Bearer <token>`で送る。
+    const authorizer = new HttpUserPoolAuthorizer('UserPoolAuthorizer', props.userPool, {
+      userPoolClients: [props.userPoolClient],
     });
 
     this.httpApi.addRoutes({
       path: '/stories',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('SubmitStoryIntegration', submitStoryFn),
+      authorizer,
+    });
+    this.httpApi.addRoutes({
+      path: '/me/stories',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('ListMyStoriesIntegration', listMyStoriesFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetStoryStatusIntegration', getStoryStatusFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/chapters/{chapterIndex}/content',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetChapterContentIntegration', getChapterContentFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/final/content',
       methods: [HttpMethod.GET],
       integration: new HttpLambdaIntegration('GetFinalContentIntegration', getFinalContentFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/metadata/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('MetadataDecisionIntegration', metadataDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/plan/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('PlanDecisionIntegration', planDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/chapters/{chapterIndex}/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('ChapterDecisionIntegration', chapterDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/final/decision',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('FinalDecisionIntegration', finalDecisionFn),
+      authorizer,
     });
     this.httpApi.addRoutes({
       path: '/stories/{storyId}/revisions',
       methods: [HttpMethod.POST],
       integration: new HttpLambdaIntegration('StartRevisionIntegration', startRevisionFn),
+      authorizer,
     });
   }
 }

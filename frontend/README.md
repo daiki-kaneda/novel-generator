@@ -29,13 +29,22 @@ npm run dev
 
 ```
 src/
-  api/            fetchクライアント・DTO型・ランタイム設定(config.json)読み込み
-  hooks/          React Queryによる状態ポーリング、ローカル履歴(localStorage)
-  components/     状態表示・承認フォーム・章一覧などのUIパーツ
-  pages/          投稿ページ / ステータス確認ページ / 章本文リーダー
+  api/            fetchクライアント・DTO型・ランタイム設定(config.json)読み込み・認証トークン注入
+  auth/           Cognitoクライアント(amazon-cognito-identity-js)ラッパーとAuthContext
+  hooks/          React Queryによる状態ポーリング
+  components/     状態表示・承認フォーム・章一覧・ProtectedRouteなどのUIパーツ
+  pages/          投稿ページ / ログイン・サインアップ・確認コード / マイストーリー / ステータス確認ページ / 章本文リーダー
 ```
 
 ## 認証について
 
-このアプリには認証機構がない。`storyId`を含むURLを知っている人は誰でも該当の物語を閲覧・承認できる
-（バックエンドの設計上の前提）。共有時はURLの取り扱いに注意すること。
+Cognito User Pool を使ったメール＋パスワードのセルフサインアップ認証を必須にしている。
+`AuthContext`（`src/auth/AuthContext.tsx`）がサインアップ・確認コード入力・サインイン・サインアウトの
+状態を管理し、`src/auth/cognitoClient.ts`（`amazon-cognito-identity-js`のラッパー）経由でCognitoと通信する。
+サインイン後に取得したIDトークンは`src/api/authToken.ts`を通じてAPIクライアント（`src/api/client.ts`）に
+注入され、すべてのAPIリクエストに`Authorization: Bearer <idToken>`ヘッダーとして付与される。
+
+`/`・`/me/stories`・`/stories/:storyId`などの主要ルートは`ProtectedRoute`でラップされており、
+未ログインの場合は`/login`にリダイレクトされる（ログイン後に元のURLへ戻る）。
+`storyId`を含むURLを知っていても、実際にその物語の所有者としてログインしていなければ閲覧・承認できない
+（バックエンド側で`ownerId`による所有者チェックを行っている）。

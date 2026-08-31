@@ -1,10 +1,14 @@
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type {
+  APIGatewayProxyEventV2WithJWTAuthorizer,
+  APIGatewayProxyResultV2,
+} from 'aws-lambda';
 import { container } from '../composition/container';
 import { jsonResponse, errorResponse } from './support/httpResponse';
+import { getAuthenticatedCaller } from './support/auth';
 
 /** POST /stories/{storyId}/chapters/{chapterIndex}/decision: 章の承認/拒否（修正フィードバック付き）。 */
 export const handler = async (
-  event: APIGatewayProxyEventV2,
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
 ): Promise<APIGatewayProxyResultV2> => {
   try {
     const storyId = event.pathParameters?.storyId;
@@ -20,11 +24,13 @@ export const handler = async (
       return jsonResponse(400, { message: 'chapterIndex must be a positive integer' });
     }
 
+    const caller = getAuthenticatedCaller(event);
     const body = JSON.parse(event.body ?? '{}');
     const approved = Boolean(body.approved);
 
     await container.decideApprovalUseCase().execute({
       storyId,
+      callerId: caller.ownerId,
       expectedStage: 'chapter',
       approved,
       feedback: body.feedback,

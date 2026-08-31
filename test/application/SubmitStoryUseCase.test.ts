@@ -17,6 +17,7 @@ describe('SubmitStoryUseCase', () => {
     );
 
     const result = await useCase.execute({
+      ownerId: 'owner-1',
       overview: 'overview',
       theme: 'theme',
       characters: 'characters',
@@ -28,6 +29,7 @@ describe('SubmitStoryUseCase', () => {
 
     const stored = await storyRepository.getStory(result.storyId);
     expect(stored.status).toBe('SUBMITTED');
+    expect(stored.ownerId).toBe('owner-1');
     expect(stored.request.userEmail).toBe('user@example.com');
     expect(stored.request.requireMetadataApproval).toBe(true);
     expect(stored.request.requirePlanApproval).toBe(true);
@@ -46,6 +48,7 @@ describe('SubmitStoryUseCase', () => {
     );
 
     const result = await useCase.execute({
+      ownerId: 'owner-1',
       overview: 'overview',
       theme: 'theme',
       characters: 'characters',
@@ -77,6 +80,7 @@ describe('SubmitStoryUseCase', () => {
     );
 
     const result = await useCase.execute({
+      ownerId: 'owner-1',
       overview: 'overview',
       theme: 'theme',
       characters: 'characters',
@@ -103,6 +107,7 @@ describe('SubmitStoryUseCase', () => {
 
     await expect(
       useCase.execute({
+        ownerId: 'owner-1',
         overview: 'overview',
         theme: 'theme',
         characters: 'characters',
@@ -121,6 +126,7 @@ describe('SubmitStoryUseCase', () => {
     const useCase = new SubmitStoryUseCase(storyRepository, requestQueue, usageAccountRepository);
 
     const result = await useCase.execute({
+      ownerId: 'owner-pro',
       overview: 'overview',
       theme: 'theme',
       characters: 'characters',

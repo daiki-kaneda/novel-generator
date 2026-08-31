@@ -85,6 +85,12 @@ export class FakeStoryRepository implements StoryRepository {
     this.stories.set(story.storyId, story);
   }
 
+  async findByOwner(ownerId: string): Promise<Story[]> {
+    return Array.from(this.stories.values())
+      .filter((story) => story.ownerId === ownerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   async saveMetadata(storyId: string, metadata: StoryMetadata): Promise<void> {
     this.metadataByStory.set(storyId, metadata);
   }

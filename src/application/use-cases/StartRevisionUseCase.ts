@@ -6,6 +6,7 @@ import { assertWithinUsageBudget } from '../services/UsageBudgetGuard';
 
 export interface StartRevisionInput {
   storyId: string;
+  callerId: string;
   /** この章番号から最終章までを再生成する（1始まり）。 */
   rewriteFromChapterIndex: number;
   /** 修正してほしい点。 */
@@ -43,6 +44,7 @@ export class StartRevisionUseCase {
     }
 
     const story = await this.storyRepository.getStory(input.storyId);
+    story.assertOwnedBy(input.callerId);
     await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     if (story.executionArn) {

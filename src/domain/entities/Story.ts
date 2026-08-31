@@ -1,7 +1,7 @@
 import { StoryId } from '../value-objects/StoryId';
 import { ApprovalStage } from '../value-objects/ApprovalDecision';
 import { StoryLength, resolveStoryLength } from '../value-objects/StoryLength';
-import { ValidationError } from '../errors/DomainErrors';
+import { ForbiddenError, ValidationError } from '../errors/DomainErrors';
 
 export type StoryStatus =
   | 'SUBMITTED'
@@ -45,6 +45,8 @@ export interface StoryRequest {
 
 export interface StoryMetaProps {
   storyId: string;
+  /** 所有者のCognito `sub`。認証必須化前のレコードには存在しない。 */
+  ownerId: string;
   status: StoryStatus;
   request: StoryRequest;
   currentTaskToken?: string;
@@ -75,11 +77,15 @@ export interface StoryMetaProps {
 export class Story {
   private constructor(private props: StoryMetaProps) {}
 
-  static submit(request: StoryRequest): Story {
+  static submit(request: StoryRequest, ownerId: string): Story {
     Story.validateRequest(request);
+    if (!ownerId || !ownerId.trim()) {
+      throw new ValidationError('ownerId is required to submit a story');
+    }
     const now = new Date().toISOString();
     return new Story({
       storyId: StoryId.generate().toString(),
+      ownerId,
       status: 'SUBMITTED',
       request: Story.normalizeRequest(request),
       createdAt: now,
@@ -108,6 +114,13 @@ export class Story {
     };
   }
 
+  /** 呼び出し元（Cognito `sub`）が所有者でなければ`ForbiddenError`を投げる。 */
+  assertOwnedBy(callerId: string): void {
+    if (this.props.ownerId !== callerId) {
+      throw new ForbiddenError(`Story ${this.props.storyId} is not owned by the caller`);
+    }
+  }
+
   private static validateRequest(request: StoryRequest): void {
     const requiredFields: Array<[keyof StoryRequest, string]> = [
       ['overview', '概要'],
@@ -127,6 +140,18 @@ export class Story {
 
   get storyId(): string {
     return this.props.storyId;
+  }
+
+  get ownerId(): string {
+    return this.props.ownerId;
+  }
+
+  get createdAt(): string {
+    return this.props.createdAt;
+  }
+
+  get updatedAt(): string {
+    return this.props.updatedAt;
   }
 
   get status(): StoryStatus {

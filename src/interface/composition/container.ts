@@ -21,6 +21,7 @@ import { ClearExecutionUseCase } from '../../application/use-cases/ClearExecutio
 import { StartRevisionUseCase } from '../../application/use-cases/StartRevisionUseCase';
 import { SubmitStoryUseCase } from '../../application/use-cases/SubmitStoryUseCase';
 import { GetStoryStatusUseCase } from '../../application/use-cases/GetStoryStatusUseCase';
+import { ListMyStoriesUseCase } from '../../application/use-cases/ListMyStoriesUseCase';
 import { GetChapterContentUseCase } from '../../application/use-cases/GetChapterContentUseCase';
 import { GetFinalContentUseCase } from '../../application/use-cases/GetFinalContentUseCase';
 import { GenerateMetadataUseCase } from '../../application/use-cases/GenerateMetadataUseCase';
@@ -112,6 +113,7 @@ export const container = {
     () => new SubmitStoryUseCase(storyRepository(), requestQueue(), usageAccountRepository()),
   ),
   getStoryStatusUseCase: lazy(() => new GetStoryStatusUseCase(storyRepository())),
+  listMyStoriesUseCase: lazy(() => new ListMyStoriesUseCase(storyRepository())),
   getChapterContentUseCase: lazy(
     () =>
       new GetChapterContentUseCase(

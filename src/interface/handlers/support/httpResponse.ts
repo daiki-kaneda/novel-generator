@@ -1,6 +1,7 @@
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import {
   BudgetExceededError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../domain/errors/DomainErrors';
@@ -20,6 +21,9 @@ export function errorResponse(error: unknown): APIGatewayProxyResultV2 {
   }
   if (error instanceof NotFoundError) {
     return jsonResponse(404, { message: error.message });
+  }
+  if (error instanceof ForbiddenError) {
+    return jsonResponse(403, { message: error.message });
   }
   if (error instanceof BudgetExceededError) {
     return jsonResponse(402, {

@@ -103,6 +103,11 @@ a {
   padding: 16px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .app-title {
@@ -110,6 +115,23 @@ a {
   font-size: 18px;
   color: var(--text-h);
   text-decoration: none;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.app-nav a {
+  color: var(--text-h);
+}
+
+.app-nav__user {
+  font-size: 13px;
+  opacity: 0.75;
+  font-family: var(--mono);
 }
 
 .app-main {
@@ -499,7 +521,7 @@ a {
   margin-top: 8px;
 }
 
-.recent-stories {
+.my-stories {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -507,7 +529,7 @@ a {
   gap: 8px;
 }
 
-.recent-stories__item {
+.my-stories__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -517,7 +539,7 @@ a {
   padding: 10px 12px;
 }
 
-.recent-stories__link {
+.my-stories__link {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -526,17 +548,32 @@ a {
   min-width: 0;
 }
 
-.recent-stories__overview {
+.my-stories__overview {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.recent-stories__meta {
+.my-stories__meta {
   font-size: 12px;
   opacity: 0.65;
   font-family: var(--mono);
+}
+
+.auth-form {
+  max-width: 420px;
+}
+
+.auth-form__switch {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.field-notice {
+  color: var(--text-h);
+  font-size: 13px;
+  margin-top: 8px;
 }
 
 .chapter-reader__nav {

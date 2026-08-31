@@ -12,6 +12,8 @@ export interface StoryRepository {
   createStory(story: Story): Promise<void>;
   getStory(storyId: string): Promise<Story>;
   saveStory(story: Story): Promise<void>;
+  /** 所有者（Cognito `sub`）が送信した物語一覧を、新しい順に返す。 */
+  findByOwner(ownerId: string): Promise<Story[]>;
 
   saveMetadata(storyId: string, metadata: StoryMetadata): Promise<void>;
   getMetadata(storyId: string): Promise<StoryMetadata>;

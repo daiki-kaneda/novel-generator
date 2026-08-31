@@ -1,10 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ApiError, submitStory } from '../api/client';
 import type { StoryLength, SubmitStoryInput } from '../api/types';
-import { RecentStoriesList } from '../components/RecentStoriesList';
-import { useRecentStories } from '../hooks/useRecentStories';
+import { useAuth } from '../auth/AuthContext';
 
 const initialForm: SubmitStoryInput = {
   overview: '',
@@ -12,7 +11,6 @@ const initialForm: SubmitStoryInput = {
   characters: '',
   tone: '',
   setting: '',
-  userEmail: '',
   requireMetadataApproval: true,
   requirePlanApproval: true,
   requireChapterApproval: false,
@@ -22,17 +20,12 @@ const initialForm: SubmitStoryInput = {
 
 export function SubmitStoryPage() {
   const navigate = useNavigate();
-  const { stories, addStory, removeStory } = useRecentStories();
+  const { user } = useAuth();
   const [form, setForm] = useState<SubmitStoryInput>(initialForm);
 
   const mutation = useMutation({
     mutationFn: () => submitStory(form),
     onSuccess: (output) => {
-      addStory({
-        storyId: output.storyId,
-        overview: form.overview,
-        submittedAt: new Date().toISOString(),
-      });
       navigate(`/stories/${output.storyId}`);
     },
   });
@@ -51,7 +44,9 @@ export function SubmitStoryPage() {
       <h1>物語を送信する</h1>
       <p className="page__lead">
         概要・テーマ・登場人物を入力すると、設定書 → プラン → 各章本文 → 最終原稿の順に生成が進みます。
-        送信後に表示されるページのURLで、いつでも進行状況を確認できます。
+        送信後に表示されるページのURLで、いつでも進行状況を確認できます。完成通知は
+        {user ? <strong> {user.email} </strong> : ' '}
+        宛に送られます。
       </p>
 
       <form className="card story-form" onSubmit={handleSubmit}>
@@ -101,16 +96,6 @@ export function SubmitStoryPage() {
           value={form.setting}
           onChange={(event) => update('setting', event.target.value)}
           placeholder="例: 孤島の灯台"
-        />
-
-        <label htmlFor="userEmail">メールアドレス（必須・完成通知の送付先）</label>
-        <input
-          id="userEmail"
-          required
-          type="email"
-          value={form.userEmail}
-          onChange={(event) => update('userEmail', event.target.value)}
-          placeholder="you@example.com"
         />
 
         <label htmlFor="length">長さ</label>
@@ -170,7 +155,9 @@ export function SubmitStoryPage() {
         )}
       </form>
 
-      <RecentStoriesList stories={stories} onRemove={removeStory} />
+      <p className="auth-form__switch">
+        <Link to="/me/stories">これまで送信した物語を見る</Link>
+      </p>
     </div>
   );
 }

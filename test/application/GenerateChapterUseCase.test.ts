@@ -30,17 +30,20 @@ function sampleMetadata(): StoryMetadata {
 }
 
 async function seedStory(repo: FakeStoryRepository, storyId: string): Promise<void> {
-  const story = Story.submit({
-    overview: 'overview',
-    theme: 'theme',
-    characters: 'characters',
-    userEmail: 'user@example.com',
-    requireMetadataApproval: true,
-    requirePlanApproval: true,
-    requireChapterApproval: false,
-    requireFinalApproval: true,
-    length: 'short',
-  });
+  const story = Story.submit(
+    {
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      userEmail: 'user@example.com',
+      requireMetadataApproval: true,
+      requirePlanApproval: true,
+      requireChapterApproval: false,
+      requireFinalApproval: true,
+      length: 'short',
+    },
+    'owner-1',
+  );
   const restored = Story.restore({
     ...story.toProps(),
     storyId,

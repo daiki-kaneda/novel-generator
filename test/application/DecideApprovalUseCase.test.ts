@@ -1,5 +1,9 @@
 import { DecideApprovalUseCase } from '../../src/application/use-cases/DecideApprovalUseCase';
-import { BudgetExceededError, ValidationError } from '../../src/domain/errors/DomainErrors';
+import {
+  BudgetExceededError,
+  ForbiddenError,
+  ValidationError,
+} from '../../src/domain/errors/DomainErrors';
 import { Story } from '../../src/domain/entities/Story';
 import { ApprovalStage } from '../../src/domain/value-objects/ApprovalDecision';
 import {
@@ -13,17 +17,20 @@ async function buildAwaitingStory(
   stage: ApprovalStage,
   chapterIndex?: number,
 ): Promise<Story> {
-  const story = Story.submit({
-    overview: 'overview',
-    theme: 'theme',
-    characters: 'characters',
-    userEmail: 'user@example.com',
-    requireMetadataApproval: true,
-    requirePlanApproval: true,
-    requireChapterApproval: false,
-    requireFinalApproval: true,
-    length: 'short',
-  });
+  const story = Story.submit(
+    {
+      overview: 'overview',
+      theme: 'theme',
+      characters: 'characters',
+      userEmail: 'user@example.com',
+      requireMetadataApproval: true,
+      requirePlanApproval: true,
+      requireChapterApproval: false,
+      requireFinalApproval: true,
+      length: 'short',
+    },
+    'owner-1',
+  );
   story.awaitApproval(stage, 'task-token', chapterIndex);
   await repo.createStory(story);
   return story;
@@ -36,7 +43,12 @@ describe('DecideApprovalUseCase', () => {
     const story = await buildAwaitingStory(repo, 'plan');
     const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
-    await useCase.execute({ storyId: story.storyId, expectedStage: 'plan', approved: true });
+    await useCase.execute({
+      storyId: story.storyId,
+      callerId: story.ownerId,
+      expectedStage: 'plan',
+      approved: true,
+    });
 
     expect(gateway.sentDecisions).toHaveLength(1);
     expect(gateway.sentDecisions[0].taskToken).toBe('task-token');
@@ -55,6 +67,7 @@ describe('DecideApprovalUseCase', () => {
 
     await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       expectedStage: 'metadata',
       approved: true,
     });
@@ -72,6 +85,7 @@ describe('DecideApprovalUseCase', () => {
 
     await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       expectedStage: 'final',
       approved: false,
       feedback: 'Please change the ending',
@@ -90,6 +104,7 @@ describe('DecideApprovalUseCase', () => {
 
     await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       expectedStage: 'final',
       approved: false,
       feedback: 'Rewrite from chapter 3',
@@ -106,7 +121,12 @@ describe('DecideApprovalUseCase', () => {
     const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
 
     await expect(
-      useCase.execute({ storyId: story.storyId, expectedStage: 'final', approved: true }),
+      useCase.execute({
+        storyId: story.storyId,
+        callerId: story.ownerId,
+        expectedStage: 'final',
+        approved: true,
+      }),
     ).rejects.toThrow(ValidationError);
 
     expect(gateway.sentDecisions).toHaveLength(0);
@@ -120,6 +140,7 @@ describe('DecideApprovalUseCase', () => {
 
     await useCase.execute({
       storyId: story.storyId,
+      callerId: story.ownerId,
       expectedStage: 'chapter',
       approved: true,
       chapterIndex: 2,
@@ -139,6 +160,7 @@ describe('DecideApprovalUseCase', () => {
     await expect(
       useCase.execute({
         storyId: story.storyId,
+        callerId: story.ownerId,
         expectedStage: 'chapter',
         approved: true,
         chapterIndex: 3,
@@ -157,8 +179,31 @@ describe('DecideApprovalUseCase', () => {
     const useCase = new DecideApprovalUseCase(repo, gateway, usageAccountRepository);
 
     await expect(
-      useCase.execute({ storyId: story.storyId, expectedStage: 'plan', approved: true }),
+      useCase.execute({
+        storyId: story.storyId,
+        callerId: story.ownerId,
+        expectedStage: 'plan',
+        approved: true,
+      }),
     ).rejects.toBeInstanceOf(BudgetExceededError);
+
+    expect(gateway.sentDecisions).toHaveLength(0);
+  });
+
+  it('rejects when the caller is not the story owner', async () => {
+    const repo = new FakeStoryRepository();
+    const gateway = new FakeApprovalGateway();
+    const story = await buildAwaitingStory(repo, 'plan');
+    const useCase = new DecideApprovalUseCase(repo, gateway, new FakeUsageAccountRepository());
+
+    await expect(
+      useCase.execute({
+        storyId: story.storyId,
+        callerId: 'someone-else',
+        expectedStage: 'plan',
+        approved: true,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
 
     expect(gateway.sentDecisions).toHaveLength(0);
   });

@@ -17,17 +17,20 @@ describe('PreparePartialRewriteUseCase', () => {
     const storage = new FakeChapterContentStorage();
     const world = new FakeWorldStateRepository();
 
-    const story = Story.submit({
-      overview: 'o',
-      theme: 't',
-      characters: 'c',
-      userEmail: 'u@example.com',
-      requireMetadataApproval: false,
-      requirePlanApproval: false,
-      requireChapterApproval: false,
-      requireFinalApproval: true,
-      length: 'short',
-    });
+    const story = Story.submit(
+      {
+        overview: 'o',
+        theme: 't',
+        characters: 'c',
+        userEmail: 'u@example.com',
+        requireMetadataApproval: false,
+        requirePlanApproval: false,
+        requireChapterApproval: false,
+        requireFinalApproval: true,
+        length: 'short',
+      },
+      'owner-1',
+    );
     const storyId = story.storyId;
     await repo.createStory(story);
     await repo.saveMetadata(

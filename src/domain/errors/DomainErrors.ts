@@ -14,6 +14,14 @@ export class ValidationError extends Error {
   }
 }
 
+/** 認証済みだが、対象リソース（物語など）の所有者でないため操作が許可されない場合のエラー。 */
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
 /** 月間利用コストがプランの上限に達しているため、新規の生成開始を拒否する場合のエラー。 */
 export class BudgetExceededError extends Error {
   readonly planTier: string;
