@@ -130,7 +130,7 @@ Bedrock呼び出しの実コストを月単位で集計し、プランごとの�
 
 ## Prerequisites
 
-- Node.js と npm
+- Node.js 20.18+ と npm
 - AWS CDK CLI（`npx cdk` で可）
 - デプロイ先アカウントで Bedrock モデルアクセスが有効であること
 - 完成メールを送る場合は SES で検証済みの送信元アドレス
