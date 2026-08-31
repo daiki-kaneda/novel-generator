@@ -1,4 +1,4 @@
-import { ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
+import { ApprovalPurpose, ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
 
 export interface ApprovalRequestedEmailInput {
   toEmail: string;
@@ -7,6 +7,7 @@ export interface ApprovalRequestedEmailInput {
   storyPageUrl: string;
   stage: ApprovalStage;
   chapterIndex?: number;
+  purpose?: ApprovalPurpose;
 }
 
 /**

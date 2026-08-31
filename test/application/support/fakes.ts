@@ -426,9 +426,14 @@ export class FakeNovelTextGenerator implements NovelTextGenerator {
 
 export class FakeApprovalGateway implements ApprovalGateway {
   readonly sentDecisions: Array<{ taskToken: string; decision: ApprovalDecision }> = [];
+  readonly sentFailures: Array<{ taskToken: string; error: string; cause: string }> = [];
 
   async sendDecision(taskToken: string, decision: ApprovalDecision): Promise<void> {
     this.sentDecisions.push({ taskToken, decision });
+  }
+
+  async sendFailure(taskToken: string, error: string, cause: string): Promise<void> {
+    this.sentFailures.push({ taskToken, error, cause });
   }
 }
 

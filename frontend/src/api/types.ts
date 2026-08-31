@@ -12,6 +12,7 @@ export type StoryStatus =
   | 'AWAITING_PLAN_APPROVAL'
   | 'CHAPTERS_GENERATING'
   | 'AWAITING_CHAPTER_APPROVAL'
+  | 'AWAITING_CHAPTER_RECOVERY'
   | 'AWAITING_FINAL_APPROVAL'
   | 'REVISING'
   | 'COMPLETED'
@@ -20,8 +21,23 @@ export type StoryStatus =
 export type StoryFailureKind = 'FAILED' | 'TIMED_OUT' | 'ABORTED';
 
 export type ApprovalStage = 'metadata' | 'plan' | 'chapter' | 'final';
+export type ApprovalPurpose = 'review' | 'recovery';
 export type ChapterStatus = 'PENDING' | 'DONE';
 export type StoryLength = 'short' | 'medium';
+export type ChapterErrorKind = 'contradiction' | 'timeout' | 'throttled' | 'unknown';
+
+export interface ContradictionDetail {
+  newFact: string;
+  conflictingFact: string;
+  reason: string;
+}
+
+export interface ChapterGenerationError {
+  chapterIndex: number;
+  kind: ChapterErrorKind;
+  message: string;
+  contradictions?: ContradictionDetail[];
+}
 
 export interface CharacterProfile {
   name: string;
@@ -82,6 +98,8 @@ export interface StoryStatusOutput {
   length: StoryLength;
   taskStage?: ApprovalStage;
   currentChapterIndex?: number;
+  approvalPurpose?: ApprovalPurpose;
+  lastChapterError?: ChapterGenerationError;
   request: {
     overview: string;
     theme: string;
@@ -167,6 +185,8 @@ export interface DecisionInput {
   approved: boolean;
   /** 拒否時は必須。修正してほしい点。 */
   feedback?: string;
+  /** 章の生成失敗からの回復待ちを中止する。 */
+  abort?: boolean;
 }
 
 export interface FinalDecisionInput extends DecisionInput {

@@ -219,7 +219,7 @@ export class NovelWorkflow extends Construct {
       id: string,
       stage: 'metadata' | 'plan' | 'chapter' | 'final',
       resultPath: string,
-      options?: { includeChapterIndex?: boolean },
+      options?: { includeChapterIndex?: boolean; purpose?: 'recovery' },
     ) =>
       new tasks.LambdaInvoke(this, id, {
         lambdaFunction: requestApprovalFn,
@@ -230,6 +230,7 @@ export class NovelWorkflow extends Construct {
           ...(options?.includeChapterIndex
             ? { chapterIndex: sfn.JsonPath.numberAt('$.chapterIndex') }
             : {}),
+          ...(options?.purpose ? { purpose: options.purpose } : {}),
           taskToken: sfn.JsonPath.taskToken,
         }),
         resultPath,
@@ -313,7 +314,7 @@ export class NovelWorkflow extends Construct {
       'RequestChapterRecovery',
       'chapter',
       '$.chapterDecision',
-      { includeChapterIndex: true },
+      { includeChapterIndex: true, purpose: 'recovery' },
     );
 
     const prepareRecoveryRevision = new sfn.Pass(this, 'PrepareRecoveryRevision', {
@@ -326,8 +327,13 @@ export class NovelWorkflow extends Construct {
       },
     });
 
+    const cannotSkipFailedChapter = new sfn.Fail(this, 'CannotSkipFailedChapter', {
+      error: 'ChapterNotGenerated',
+      cause: 'Failed chapter cannot be skipped by approving; provide revision feedback to regenerate',
+    });
+
     const recoveryApprovedChoice = new sfn.Choice(this, 'RecoveryApproved?')
-      .when(sfn.Condition.booleanEquals('$.chapterDecision.approved', true), chapterDone)
+      .when(sfn.Condition.booleanEquals('$.chapterDecision.approved', true), cannotSkipFailedChapter)
       .otherwise(prepareRecoveryRevision);
 
     const retryOrRecover = new sfn.Choice(this, 'RetryChapterOrRecover?')
@@ -437,7 +443,7 @@ export class NovelWorkflow extends Construct {
       'RewriteRequestChapterRecovery',
       'chapter',
       '$.chapterDecision',
-      { includeChapterIndex: true },
+      { includeChapterIndex: true, purpose: 'recovery' },
     );
     const rewritePrepareRecovery = new sfn.Pass(this, 'RewritePrepareRecoveryRevision', {
       parameters: {
@@ -448,8 +454,15 @@ export class NovelWorkflow extends Construct {
         attempt: 0,
       },
     });
+    const rewriteCannotSkipFailedChapter = new sfn.Fail(this, 'RewriteCannotSkipFailedChapter', {
+      error: 'ChapterNotGenerated',
+      cause: 'Failed chapter cannot be skipped by approving; provide revision feedback to regenerate',
+    });
     const rewriteRecoveryChoice = new sfn.Choice(this, 'RewriteRecoveryApproved?')
-      .when(sfn.Condition.booleanEquals('$.chapterDecision.approved', true), rewriteChapterDone)
+      .when(
+        sfn.Condition.booleanEquals('$.chapterDecision.approved', true),
+        rewriteCannotSkipFailedChapter,
+      )
       .otherwise(rewritePrepareRecovery);
     const rewriteRetryOrRecover = new sfn.Choice(this, 'RewriteRetryChapterOrRecover?')
       .when(sfn.Condition.numberLessThan('$.attempt', 2), rewriteGenerateChapter)

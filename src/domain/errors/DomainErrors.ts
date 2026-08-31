@@ -1,3 +1,5 @@
+import { serializeContradictionError } from '../value-objects/ChapterGenerationError';
+
 /** 指定されたリソース（物語・プラン・章など）が存在しない場合のエラー。 */
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -42,6 +44,7 @@ export class BudgetExceededError extends Error {
 
 /** TKG 矛盾検出時。Step Functions の Catch で捕捉する。 */
 export class ContradictionDetectedError extends Error {
+  readonly chapterIndex: number;
   readonly contradictions: Array<{
     newFact: string;
     conflictingFact: string;
@@ -49,11 +52,12 @@ export class ContradictionDetectedError extends Error {
   }>;
 
   constructor(
-    message: string,
+    chapterIndex: number,
     contradictions: Array<{ newFact: string; conflictingFact: string; reason: string }> = [],
   ) {
-    super(message);
+    super(serializeContradictionError(chapterIndex, contradictions));
     this.name = 'ContradictionDetectedError';
+    this.chapterIndex = chapterIndex;
     this.contradictions = contradictions;
   }
 }

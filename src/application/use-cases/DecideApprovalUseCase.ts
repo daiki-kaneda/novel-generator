@@ -20,6 +20,11 @@ export interface DecideApprovalInput {
    * 未指定時は最終章のみの再生成をデフォルトとする（フルリライト回避）。
    */
   rewriteFromChapterIndex?: number;
+  /**
+   * 章の生成失敗からの回復待ちを中止し、ワークフローを失敗させる。
+   * `approvalPurpose === 'recovery'` のときだけ有効。
+   */
+  abort?: boolean;
 }
 
 /**
@@ -43,9 +48,6 @@ export class DecideApprovalUseCase {
       );
     }
 
-    // 承認・拒否のいずれも次工程の生成（追加コスト）につながるため、決定送信前に予算を確認する。
-    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
-
     if (input.expectedStage === 'chapter') {
       if (input.chapterIndex === undefined) {
         throw new ValidationError('chapterIndex is required for chapter approval decisions');
@@ -56,6 +58,31 @@ export class DecideApprovalUseCase {
         );
       }
     }
+
+    if (input.abort) {
+      if (story.approvalPurpose !== 'recovery') {
+        throw new ValidationError(
+          '生成の中止は、章の生成失敗からの回復待ちのときだけできます',
+        );
+      }
+      await this.approvalGateway.sendFailure(
+        story.currentTaskToken,
+        'ChapterRecoveryAborted',
+        'User aborted chapter recovery',
+      );
+      story.clearApproval();
+      await this.storyRepository.saveStory(story);
+      return;
+    }
+
+    if (story.approvalPurpose === 'recovery' && input.approved) {
+      throw new ValidationError(
+        '生成に失敗した章は承認して先に進めません。修正の指示を出して再生成するか、生成を中止してください。',
+      );
+    }
+
+    // 承認・拒否のいずれも次工程の生成（追加コスト）につながるため、決定送信前に予算を確認する。
+    await assertWithinUsageBudget(this.usageAccountRepository, story.request.userEmail);
 
     let rewriteFromChapterIndex = input.rewriteFromChapterIndex;
     if (!input.approved && input.expectedStage === 'final' && rewriteFromChapterIndex === undefined) {

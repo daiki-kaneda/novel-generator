@@ -40,7 +40,8 @@ AWS 上で短編〜中編の日本語小説を生成するサーバーレスワ�
 1. **BindExecution** … 実行 ARN をロック
 2. **GenerateMetadata** … 設定書生成 →（任意）メタデータ承認
 3. **GeneratePlan** … 章構成生成 →（任意）プラン承認
-4. **GenerateChapters (Map)** … 章本文生成・事実抽出・未来プラン再整合 →（任意）章承認
+    4. **GenerateChapters (Map)** … 章本文生成・事実抽出・未来プラン再整合 →（任意）章承認。生成が2回失敗すると章の再生成指示待ち（通常の章承認とは別UI）に入る
+
 5. **Final approval / Finalize** …（任意）最終承認のあと本文連結・通知
 6. **Revision path** … 最終拒否や `POST .../revisions` から指定章以降を部分再生成
 

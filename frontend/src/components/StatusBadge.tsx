@@ -5,7 +5,7 @@ function toneFor(status: StoryStatus): 'progress' | 'waiting' | 'done' | 'failed
   if (status === 'COMPLETED') {
     return 'done';
   }
-  if (status === 'FAILED') {
+  if (status === 'FAILED' || status === 'AWAITING_CHAPTER_RECOVERY') {
     return 'failed';
   }
   if (isAwaitingApproval(status)) {

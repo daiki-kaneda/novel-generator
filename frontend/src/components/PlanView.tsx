@@ -1,6 +1,23 @@
 import type { StoryStatusOutput } from '../api/types';
 
+/** 補償時に誤って載った Lambda スタック JSON などはプラン画面に出さない。 */
+export function isUserFacingForbiddenDevelopment(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/"error(Type|Message)"/.test(trimmed) || trimmed.includes('\n    at ')) {
+    return false;
+  }
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return false;
+  }
+  return true;
+}
+
 export function PlanView({ plan }: { plan: NonNullable<StoryStatusOutput['plan']> }) {
+  const forbiddenDevelopments = plan.forbiddenDevelopments.filter(isUserFacingForbiddenDevelopment);
+
   return (
     <div className="card">
       <h3>プラン</h3>
@@ -11,11 +28,11 @@ export function PlanView({ plan }: { plan: NonNullable<StoryStatusOutput['plan']
         <dd>{plan.theme}</dd>
       </dl>
 
-      {plan.forbiddenDevelopments.length > 0 && (
+      {forbiddenDevelopments.length > 0 && (
         <>
           <h4>禁止展開</h4>
           <ul>
-            {plan.forbiddenDevelopments.map((item) => (
+            {forbiddenDevelopments.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>

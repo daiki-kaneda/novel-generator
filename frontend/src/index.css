@@ -515,6 +515,31 @@ a {
   margin-top: 12px;
 }
 
+.recovery-error {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+}
+
+.recovery-error__message {
+  white-space: pre-wrap;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.recovery-error__list {
+  margin: 10px 0 0;
+  padding-left: 1.2em;
+  font-size: 14px;
+}
+
+.recovery-error__list li {
+  margin-bottom: 6px;
+}
+
 .field-error {
   color: var(--danger);
   font-size: 13px;

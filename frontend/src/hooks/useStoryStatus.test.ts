@@ -10,6 +10,7 @@ describe('pollIntervalFor', () => {
 
   it('polls slowly while awaiting approval and quickly while generating', () => {
     expect(pollIntervalFor('AWAITING_PLAN_APPROVAL')).toBe(15_000);
+    expect(pollIntervalFor('AWAITING_CHAPTER_RECOVERY')).toBe(15_000);
     expect(pollIntervalFor('CHAPTERS_GENERATING')).toBe(3_000);
   });
 });

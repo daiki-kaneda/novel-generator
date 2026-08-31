@@ -90,6 +90,36 @@ describe('Story', () => {
     expect(story.currentChapterIndex).toBeUndefined();
   });
 
+  it('tracks chapter recovery wait as a distinct status from content approval', () => {
+    const story = Story.submit(validRequest, 'owner-1');
+
+    story.awaitApproval('chapter', 'recovery-token', 2, 'recovery');
+    expect(story.status).toBe('AWAITING_CHAPTER_RECOVERY');
+    expect(story.taskStage).toBe('chapter');
+    expect(story.approvalPurpose).toBe('recovery');
+    expect(story.currentChapterIndex).toBe(2);
+
+    story.clearApproval();
+    expect(story.approvalPurpose).toBeUndefined();
+    expect(story.currentTaskToken).toBeUndefined();
+  });
+
+  it('keeps lastChapterError when the workflow fails so the user can still see why', () => {
+    const story = Story.submit(validRequest, 'owner-1');
+    story.recordChapterError({
+      chapterIndex: 2,
+      kind: 'contradiction',
+      message: '第2章の生成で矛盾が見つかりました',
+    });
+    story.awaitApproval('chapter', 'recovery-token', 2, 'recovery');
+
+    story.fail('FAILED', '生成ワークフローが失敗しました');
+
+    expect(story.status).toBe('FAILED');
+    expect(story.lastChapterError?.message).toContain('矛盾');
+    expect(story.approvalPurpose).toBeUndefined();
+  });
+
   it('rejects submission when a required field is missing', () => {
     expect(() => Story.submit({ ...validRequest, overview: '' }, 'owner-1')).toThrow(
       ValidationError,

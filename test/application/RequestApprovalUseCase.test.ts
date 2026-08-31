@@ -67,6 +67,28 @@ describe('RequestApprovalUseCase', () => {
     );
   });
 
+  it('persists recovery purpose and emails a generation-failure notice', async () => {
+    const repo = new FakeStoryRepository();
+    const notifier = new FakeNotificationSender();
+    const story = submitStory();
+    await repo.createStory(story);
+
+    const useCase = new RequestApprovalUseCase(repo, notifier, 'https://d111.cloudfront.net');
+    await useCase.execute({
+      storyId: story.storyId,
+      stage: 'chapter',
+      taskToken: 'token-recovery',
+      chapterIndex: 2,
+      purpose: 'recovery',
+    });
+
+    const saved = await repo.getStory(story.storyId);
+    expect(saved.status).toBe('AWAITING_CHAPTER_RECOVERY');
+    expect(saved.approvalPurpose).toBe('recovery');
+    expect(notifier.sentApprovalEmails[0]?.purpose).toBe('recovery');
+    expect(notifier.sentApprovalEmails[0]?.chapterIndex).toBe(2);
+  });
+
   it('does not send email when FRONTEND_BASE_URL is missing', async () => {
     const repo = new FakeStoryRepository();
     const notifier = new FakeNotificationSender();

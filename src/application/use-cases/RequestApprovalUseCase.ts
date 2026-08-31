@@ -1,4 +1,4 @@
-import { ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
+import { ApprovalPurpose, ApprovalStage } from '../../domain/value-objects/ApprovalDecision';
 import { NotificationSender } from '../ports/NotificationSender';
 import { StoryRepository } from '../ports/StoryRepository';
 
@@ -9,6 +9,8 @@ export interface RequestApprovalInput {
   taskToken: string;
   /** stageが`chapter`のとき必須。 */
   chapterIndex?: number;
+  /** 章待ちの目的。省略時は通常の内容承認。 */
+  purpose?: ApprovalPurpose;
 }
 
 function storyPageUrl(frontendBaseUrl: string, storyId: string): string {
@@ -33,7 +35,7 @@ export class RequestApprovalUseCase {
 
   async execute(input: RequestApprovalInput): Promise<void> {
     const story = await this.storyRepository.getStory(input.storyId);
-    story.awaitApproval(input.stage, input.taskToken, input.chapterIndex);
+    story.awaitApproval(input.stage, input.taskToken, input.chapterIndex, input.purpose);
     await this.storyRepository.saveStory(story);
 
     const baseUrl = this.frontendBaseUrl?.trim();
@@ -48,6 +50,7 @@ export class RequestApprovalUseCase {
         storyPageUrl: storyPageUrl(baseUrl, story.storyId),
         stage: input.stage,
         chapterIndex: input.chapterIndex,
+        ...(input.purpose === 'recovery' ? { purpose: 'recovery' as const } : {}),
       });
     } catch (error) {
       console.error('Failed to send approval-requested email', {
